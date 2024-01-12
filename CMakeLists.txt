@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.10)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+include_directories(include)
+# add_subdirectory(service/demo/CallRemoteEnclaveService)
+# add_subdirectory(service/demo/MigrateLocalEnclaveService)
+add_subdirectory(service/demo/libdtee)
+install(DIRECTORY include/ DESTINATION /usr/local/include/TEE-Capability)
