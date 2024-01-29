@@ -83,11 +83,15 @@ public:
 
   template <typename ServerProxy = DDSServer> // ServerProxy must implement:
                                               // init, serve, publish_service
-  void run() {
-    ServerProxy server;
-    server.init();
-    server.publish_service(service_names[0]);
-    server.serve(this);
+  ServerProxy *run() {
+    ServerProxy *server_proxy = new ServerProxy;
+    server_proxy->init();
+    server_proxy->publish_service(service_names[0]);
+    /* for (const auto &name : service_names) { */
+    /*   server.publish_service(name); */
+    /* } */
+    server_proxy->serve(this);
+    return server_proxy;
   }
 
   // call function template class using tuple as parameter
@@ -125,7 +129,7 @@ public:
   void service_proxy_(std::function<R(Params... ps)> service,
                       Serialization *serialization, const char *data, int len) {
     using args_type = std::tuple<typename std::decay<Params>::type...>;
-
+    //
     Serialization param_serialization(StreamBuffer(data, len));
     constexpr auto N =
         std::tuple_size<typename std::decay<args_type>::type>::value;

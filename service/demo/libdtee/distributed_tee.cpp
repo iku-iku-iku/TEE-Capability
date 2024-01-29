@@ -23,6 +23,7 @@
 #include <distributed_tee.h>
 #include <iomanip>
 #include <iostream>
+#include <random>
 #include <sstream>
 #include <string>
 
@@ -31,6 +32,8 @@
 #include <face_recognition_shared_param.h>
 #include <pthread.h>
 
+#include <fstream>
+#include <vector>
 using namespace eprosima::fastrtps;
 using namespace eprosima::fastrtps::rtps;
 using namespace enclaveelf;
@@ -91,22 +94,114 @@ static int check_args(E_SIDE *side, int argc, char **argv, int samples) {
     return 0;
   }
 }
+bool write_file(const char *path, const std::vector<char> &bytes) {
+  std::ofstream file(path, std::ios::binary);
+  if (!file.is_open()) {
+    return false;
+  }
+
+  file.write(bytes.data(), bytes.size());
+  return !file.fail();
+}
+
+void record_mapping(const std::string &key, const std::string &val) {
+  std::ofstream ofs("mapping", std::ios::app);
+  ofs << key << std::endl << val << std::endl;
+}
+
+std::string get_value_with_key(const std::string &key) {
+  std::ifstream ifs("mapping");
+  std::string line;
+  while (std::getline(ifs, line)) {
+    if (line == key) {
+      std::getline(ifs, line);
+      return line;
+    } else {
+      std::getline(ifs, line);
+    }
+  }
+  return "invalid";
+}
+
+std::string generate_random_string() {
+  const std::string charset =
+      "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<> dis(0, charset.size() - 1);
+
+  std::stringstream result;
+  for (int i = 0; i < 16; ++i) {
+    result << charset[dis(gen)];
+  }
+
+  return result.str();
+}
+
+int enclave_receiver(std::vector<char> enclave_file, std::string client_name) {
+  std::cout << "RECEIVED ENCLAVE FILE FROM " << client_name << std::endl;
+  std::string enclave_filename = generate_random_string() + ".signed.so";
+  if (!write_file(enclave_filename.c_str(), enclave_file)) {
+    return -1;
+  }
+  record_mapping(client_name, enclave_filename);
+  return 0;
+}
+
+bool read_file(const char *path, std::vector<char> &bytes) {
+  std::ifstream file(path, std::ios::binary);
+  if (!file.is_open()) {
+    return false;
+  }
+
+  file.seekg(0, std::ios::end);
+  std::streampos file_size = file.tellg();
+  file.seekg(0, std::ios::beg);
+
+  if (file_size <= 0) {
+    file.close();
+    return false;
+  }
+
+  bytes.resize(static_cast<size_t>(file_size));
+  file.read(bytes.data(), file_size);
+  file.close();
+
+  return static_cast<size_t>(file_size) == bytes.size();
+}
 
 DistributedTeeContext *
 init_distributed_tee_context(DistributedTeeConfig config) {
   DistributedTeeContext *context = new DistributedTeeContext{};
+  g_current_dtee_context = context;
+  context->config = config;
   if (config.side == SIDE::Server) {
-    context->server = new TeeServer;
+    if (config.mode == MODE::COMPUTE_NODE) {
+      publish_secure_function(context, enclave_receiver);
+    }
   } else {
     context->client = new TeeClient;
+
+    if (config.mode == MODE::MIGRATE) {
+      std::vector<char> bytes;
+      if (read_file("enclave.signed.so", bytes)) {
+        const std::string &client_name = config.name;
+        std::cout << "BEGIN MIGRATED ENCLAVE" << std::endl;
+        g_current_dtee_context->client->call_service<int>(
+            "enclave_receiver", ENCLAVE_UNRELATED, bytes, client_name);
+        std::cout << "END MIGRATED ENCLAVE" << std::endl;
+      }
+    }
   }
   return context;
 }
 
 void destroy_distributed_tee_config(DistributedTeeContext *context) {
-  delete context->server;
   delete context->client;
   delete context;
+  for (const auto &s : context->servers) {
+    delete s;
+  }
 }
 
 #define DECL_FUNC_TYPE(FuncName, FuncRet, ...)                                 \
@@ -117,5 +212,45 @@ void destroy_distributed_tee_config(DistributedTeeContext *context) {
     context->server->add_service_to_func(#FuncName, proxy_##FuncName);         \
   }
 
-void tee_server_run(DistributedTeeContext *context) { context->server->run(); }
+void tee_server_run(DistributedTeeContext *context) {
+  using ProxyType =
+      std::remove_pointer_t<decltype(std::declval<SoftbusServer>().run())>;
+  std::vector<std::unique_ptr<ProxyType>> proxys;
+  for (const auto &s : context->servers) {
+    if (s) {
+      auto *proxy = s->run();
+      proxys.emplace_back(proxy);
+    }
+  }
+  std::cout << "Enter a number to stop the server: ";
+  int aux;
+  std::cin >> aux;
+}
+
+int remote_ecall_enclave(void *enclave, uint32_t function_id,
+                         const void *input_buffer, size_t input_buffer_size,
+                         void *output_buffer, size_t output_buffer_size,
+                         void *ms, const void *ocall_table) {
+  printf("HOOKED: FUNCTION ID: %d, INPUT BUFFER SIZE: %lu, OUTPUT BUFFER SIZE: "
+         "%lu\n",
+         function_id, input_buffer_size, output_buffer_size);
+  char *input_buffer_ = (char *)input_buffer;
+  char *output_buffer_ = (char *)output_buffer;
+  std::vector<char> in_buf(input_buffer_, input_buffer_ + input_buffer_size);
+  std::vector<char> out_buf(output_buffer_,
+                            output_buffer_ + output_buffer_size);
+  const std::string &client_name = g_current_dtee_context->config.name;
+  auto res =
+      g_current_dtee_context->client->call_service<PackedMigrateCallResult>(
+          "_Z_task_handler", ENCLAVE_UNRELATED, client_name, function_id,
+          in_buf, out_buf);
+
+  for (int i = 0; i < output_buffer_size; i++) {
+    output_buffer_[i] = res.out_buf[i];
+  }
+
+  return res.res;
+}
+
+DistributedTeeContext *g_current_dtee_context;
 // DECL_FUNC_TYPE(PLenclave_operation_remote_func, int, std::string)
