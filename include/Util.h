@@ -18,6 +18,8 @@
 
 std::string get_random_guid();
 
+bool is_module_installed(const char *mod_name);
+
 #define QWORD 8
 #define DWORD 4
 

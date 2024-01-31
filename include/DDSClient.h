@@ -18,6 +18,8 @@
 
 #include "ClientServerTypes.h"
 
+#include "Serialization.h"
+#include "Util.h"
 #include <fastdds/dds/domain/DomainParticipant.hpp>
 #include <fastdds/dds/publisher/DataWriter.hpp>
 #include <fastdds/dds/publisher/DataWriterListener.hpp>
@@ -26,8 +28,6 @@
 #include <fastdds/dds/subscriber/DataReaderListener.hpp>
 #include <fastdds/dds/subscriber/Subscriber.hpp>
 #include <fastdds/dds/topic/Topic.hpp>
-#include "Serialization.h"
-#include "Util.h"
 
 #define HISTORY_DEPTH 1000
 #define MAX_SAMPLES 1500
@@ -36,90 +36,80 @@
 
 class DDSClient {
 public:
-    DDSClient();
+  DDSClient();
 
-    virtual ~DDSClient();
+  virtual ~DDSClient();
 
-    eprosima::fastdds::dds::Publisher *mp_operation_pub;
+  eprosima::fastdds::dds::Publisher *mp_operation_pub;
 
-    eprosima::fastdds::dds::DataWriter *mp_operation_writer;
+  eprosima::fastdds::dds::DataWriter *mp_operation_writer;
 
-    eprosima::fastdds::dds::Subscriber *mp_result_sub;
+  eprosima::fastdds::dds::Subscriber *mp_result_sub;
 
-    eprosima::fastdds::dds::DataReader *mp_result_reader;
+  eprosima::fastdds::dds::DataReader *mp_result_reader;
 
-    eprosima::fastdds::dds::Topic *mp_operation_topic;
+  eprosima::fastdds::dds::Topic *mp_operation_topic;
 
-    eprosima::fastdds::dds::Topic *mp_result_topic;
+  eprosima::fastdds::dds::Topic *mp_result_topic;
 
-    eprosima::fastdds::dds::DomainParticipant *mp_participant;
+  eprosima::fastdds::dds::DomainParticipant *mp_participant;
 
-    bool init(std::string service_name = "");
+  bool init(std::string service_name = "");
 
-    Serialization *call_service(Serialization *param, int enclave_id = -1);
+  Serialization *call_service(Serialization *param, int enclave_id = -1);
 
-    bool isReady();
+  bool isReady();
+
+  const clientserver::Result &get_result() { return m_result; }
 
 private:
-    std::string m_guid;
+  std::string m_guid;
 
-    clientserver::Operation m_operation;
+  clientserver::Operation m_operation;
 
-    clientserver::Result m_result;
+  clientserver::Result m_result;
 
-    void resetResult();
+  void resetResult();
 
-    eprosima::fastdds::dds::TypeSupport mp_resultdatatype;
+  eprosima::fastdds::dds::TypeSupport mp_resultdatatype;
 
-    eprosima::fastdds::dds::TypeSupport mp_operationdatatype;
+  eprosima::fastdds::dds::TypeSupport mp_operationdatatype;
 
-    class OperationListener
-        : public eprosima::fastdds::dds::DataWriterListener {
-    public:
-        OperationListener(DDSClient *up) : mp_up(up)
-        {
-        }
+  class OperationListener : public eprosima::fastdds::dds::DataWriterListener {
+  public:
+    OperationListener(DDSClient *up) : mp_up(up) {}
 
-        ~OperationListener() override
-        {
-        }
+    ~OperationListener() override {}
 
-        DDSClient *mp_up;
+    DDSClient *mp_up;
 
-        void on_publication_matched(
-            eprosima::fastdds::dds::DataWriter *writer,
-            const eprosima::fastdds::dds::PublicationMatchedStatus &info)
-            override;
-    } m_operationsListener;
+    void on_publication_matched(
+        eprosima::fastdds::dds::DataWriter *writer,
+        const eprosima::fastdds::dds::PublicationMatchedStatus &info) override;
+  } m_operationsListener;
 
-    class ResultListener : public eprosima::fastdds::dds::DataReaderListener {
-    public:
-        ResultListener(DDSClient *up) : mp_up(up)
-        {
-        }
+  class ResultListener : public eprosima::fastdds::dds::DataReaderListener {
+  public:
+    ResultListener(DDSClient *up) : mp_up(up) {}
 
-        ~ResultListener() override
-        {
-        }
+    ~ResultListener() override {}
 
-        DDSClient *mp_up;
+    DDSClient *mp_up;
 
-        void
-        on_data_available(eprosima::fastdds::dds::DataReader *reader) override;
+    void on_data_available(eprosima::fastdds::dds::DataReader *reader) override;
 
-        void on_subscription_matched(
-            eprosima::fastdds::dds::DataReader *reader,
-            const eprosima::fastdds::dds::SubscriptionMatchedStatus &info)
-            override;
-    } m_resultsListener;
+    void on_subscription_matched(
+        eprosima::fastdds::dds::DataReader *reader,
+        const eprosima::fastdds::dds::SubscriptionMatchedStatus &info) override;
+  } m_resultsListener;
 
-    bool m_isReady;
+  bool m_isReady;
 
-    int m_operationMatched;
+  int m_operationMatched;
 
-    int m_resultMatched;
+  int m_resultMatched;
 
-    void create_participant(std::string pqos_name);
+  void create_participant(std::string pqos_name);
 };
 
 #endif /* DDSCLIENT_H_ */

@@ -207,6 +207,7 @@ public:
       std::this_thread::sleep_for(std::chrono::milliseconds(NET_CALL_TIMEOUT));
     }
 
+    std::cout << "NET CALL " << enclave_id << std::endl;
     Serialization *result = m_client.call_service(&ds, enclave_id);
     V val;
     (*result) >> val;
@@ -225,6 +226,8 @@ public:
     package_params(ds, params...);
     return net_call<V>(ds, enclave_id);
   }
+
+  ClientProxy &get_client_proxy() { return m_client; }
 
 private:
   ClientProxy m_client;

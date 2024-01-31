@@ -18,6 +18,9 @@
 
 #include "ClientServerTypes.h"
 
+#include "Serialization.h"
+#include "Util.h"
+#include "fastdds/dds/core/status/SubscriptionMatchedStatus.hpp"
 #include <fastdds/dds/domain/DomainParticipant.hpp>
 #include <fastdds/dds/publisher/DataWriter.hpp>
 #include <fastdds/dds/publisher/DataWriterListener.hpp>
@@ -29,8 +32,6 @@
 #include <fastdds/dds/topic/Topic.hpp>
 #include <unordered_map>
 #include <vector>
-#include "Serialization.h"
-#include "Util.h"
 
 #define CALL_SERVER_TIMEOUT 1000
 #define HISTORY_DEPTH 1000
@@ -47,348 +48,308 @@
 class SoftbusServer;
 
 class DDSServer {
-    friend class OperationListener;
-    friend class ResultListener;
+  friend class OperationListener;
+  friend class ResultListener;
 
 public:
-    DDSServer();
+  DDSServer();
 
-    virtual ~DDSServer();
+  virtual ~DDSServer();
 
-    void init()
-    {
+  void init() {}
+
+  bool publish_service(std::string service_name);
+
+  // Serve indefinitely.
+  void serve();
+
+  void serve(class SoftbusServer *_server);
+
+  std::string m_guid;
+  uint32_t m_n_served;
+
+  class OperationListener : public eprosima::fastdds::dds::DataReaderListener {
+  public:
+    class SoftbusServer *server;
+
+    OperationListener(DDSServer *up) : mp_up(up) {}
+
+    ~OperationListener() override {}
+
+    DDSServer *mp_up;
+
+    void on_data_available(eprosima::fastdds::dds::DataReader *reader) override;
+
+    clientserver::Operation m_operation;
+
+    clientserver::Result m_result;
+  };
+
+  class ResultListener : public eprosima::fastdds::dds::DataWriterListener {
+  public:
+    ResultListener(DDSServer *up) : mp_up(up) {}
+
+    ~ResultListener() override {}
+
+    DDSServer *mp_up;
+  };
+
+  OperationListener m_operationsListener;
+  ResultListener m_resultsListener;
+
+  bool m_isReadyDetect = false;
+  int m_operationMatchedDetect = 0;
+  int m_resultMatchedDetect = 0;
+
+  bool isReadyDetect() {
+    if (m_operationMatchedDetect >= 1 && m_resultMatchedDetect >= 1) {
+      m_isReadyDetect = true;
+    } else {
+      m_isReadyDetect = false;
     }
+    return m_isReadyDetect;
+  }
 
-    bool publish_service(std::string service_name);
+  class OperationDetectListener
+      : public eprosima::fastdds::dds::DataWriterListener {
+  public:
+    OperationDetectListener(DDSServer *up) : mp_up(up) {}
 
-    // Serve indefinitely.
-    void serve();
+    ~OperationDetectListener() override {}
 
-    void serve(class SoftbusServer *_server);
+    DDSServer *mp_up;
 
-    std::string m_guid;
-    uint32_t m_n_served;
-
-    class OperationListener
-        : public eprosima::fastdds::dds::DataReaderListener {
-    public:
-        class SoftbusServer *server;
-
-        OperationListener(DDSServer *up) : mp_up(up)
-        {
-        }
-
-        ~OperationListener() override
-        {
-        }
-
-        DDSServer *mp_up;
-
-        void
-        on_data_available(eprosima::fastdds::dds::DataReader *reader) override;
-
-        clientserver::Operation m_operation;
-
-        clientserver::Result m_result;
-    };
-
-    class ResultListener : public eprosima::fastdds::dds::DataWriterListener {
-    public:
-        ResultListener(DDSServer *up) : mp_up(up)
-        {
-        }
-
-        ~ResultListener() override
-        {
-        }
-
-        DDSServer *mp_up;
-    };
-
-    OperationListener m_operationsListener;
-    ResultListener m_resultsListener;
-
-    bool m_isReadyDetect = false;
-    int m_operationMatchedDetect = 0;
-    int m_resultMatchedDetect = 0;
-
-    bool isReadyDetect()
-    {
-        if (m_operationMatchedDetect >= 1 && m_resultMatchedDetect >= 1) {
-            m_isReadyDetect = true;
-        } else {
-            m_isReadyDetect = false;
-        }
-        return m_isReadyDetect;
+    void on_publication_matched(
+        eprosima::fastdds::dds::DataWriter * /* writer */,
+        const eprosima::fastdds::dds::PublicationMatchedStatus &info) {
+      if (info.current_count_change == 1) {
+        mp_up->m_operationMatchedDetect++;
+      } else if (info.current_count_change == -1) {
+        mp_up->m_resultMatchedDetect--;
+      } else {
+        std::cout << info.current_count_change
+                  << " is not a valid value for "
+                     "PublicationMatchedStatus current count change"
+                  << std::endl;
+      }
+      mp_up->isReadyDetect();
     }
+  };
 
-    class OperationDetectListener
-        : public eprosima::fastdds::dds::DataWriterListener {
-    public:
-        OperationDetectListener(DDSServer *up) : mp_up(up)
-        {
-        }
+  class ResultDetectListener
+      : public eprosima::fastdds::dds::DataReaderListener {
+  public:
+    ResultDetectListener(DDSServer *up) : mp_up(up) {}
 
-        ~OperationDetectListener() override
-        {
-        }
+    ~ResultDetectListener() override {}
 
-        DDSServer *mp_up;
+    DDSServer *mp_up;
 
-        void on_publication_matched(
-            eprosima::fastdds::dds::DataWriter * /* writer */,
-            const eprosima::fastdds::dds::PublicationMatchedStatus &info)
-        {
-            if (info.current_count_change == 1) {
-                mp_up->m_operationMatchedDetect++;
-            } else if (info.current_count_change == -1) {
-                mp_up->m_resultMatchedDetect--;
-            } else {
-                std::cout << info.current_count_change
-                          << " is not a valid value for "
-                             "PublicationMatchedStatus current count change"
-                          << std::endl;
-            }
-            mp_up->isReadyDetect();
-        }
-    };
+    void on_data_available(eprosima::fastdds::dds::DataReader * /* reader */) {}
 
-    class ResultDetectListener
-        : public eprosima::fastdds::dds::DataReaderListener {
-    public:
-        ResultDetectListener(DDSServer *up) : mp_up(up)
-        {
-        }
+    void on_subscription_matched(
+        eprosima::fastdds::dds::DataReader * /* reader */,
+        const eprosima::fastdds::dds::SubscriptionMatchedStatus &info) {
+      if (info.current_count_change == 1) {
+        mp_up->m_resultMatchedDetect++;
+      } else if (info.current_count_change == -1) {
+        mp_up->m_resultMatchedDetect--;
+      } else {
+        std::cout << info.current_count_change
+                  << " is not a valid value for "
+                     "SubscriptionMatchedStatus current count change"
+                  << std::endl;
+      }
+      mp_up->isReadyDetect();
+    }
+  };
 
-        ~ResultDetectListener() override
-        {
-        }
-
-        DDSServer *mp_up;
-
-        void
-        on_data_available(eprosima::fastdds::dds::DataReader * /* reader */)
-        {
-        }
-
-        void on_subscription_matched(
-            eprosima::fastdds::dds::DataReader * /* reader */,
-            const eprosima::fastdds::dds::SubscriptionMatchedStatus &info)
-        {
-            if (info.current_count_change == 1) {
-                mp_up->m_resultMatchedDetect++;
-            } else if (info.current_count_change == -1) {
-                mp_up->m_resultMatchedDetect--;
-            } else {
-                std::cout << info.current_count_change
-                          << " is not a valid value for "
-                             "SubscriptionMatchedStatus current count change"
-                          << std::endl;
-            }
-            mp_up->isReadyDetect();
-        }
-    };
-
-    OperationDetectListener m_operationsDetectListener;
-    ResultDetectListener m_resultsDetectListener;
+  OperationDetectListener m_operationsDetectListener;
+  ResultDetectListener m_resultsDetectListener;
 
 private:
-    eprosima::fastdds::dds::Subscriber *mp_operation_sub;
+  eprosima::fastdds::dds::Subscriber *mp_operation_sub;
 
-    eprosima::fastdds::dds::DataReader *mp_operation_reader;
+  eprosima::fastdds::dds::DataReader *mp_operation_reader;
 
-    eprosima::fastdds::dds::Publisher *mp_result_pub;
+  eprosima::fastdds::dds::Publisher *mp_result_pub;
 
-    eprosima::fastdds::dds::DataWriter *mp_result_writer;
+  eprosima::fastdds::dds::DataWriter *mp_result_writer;
 
-    eprosima::fastdds::dds::Topic *mp_operation_topic;
+  eprosima::fastdds::dds::Topic *mp_operation_topic;
 
-    eprosima::fastdds::dds::Topic *mp_result_topic;
+  eprosima::fastdds::dds::Topic *mp_result_topic;
 
-    eprosima::fastdds::dds::DomainParticipant *mp_participant;
+  eprosima::fastdds::dds::DomainParticipant *mp_participant;
 
-    eprosima::fastdds::dds::TypeSupport mp_resultdatatype;
+  eprosima::fastdds::dds::TypeSupport mp_resultdatatype;
 
-    eprosima::fastdds::dds::TypeSupport mp_operationdatatype;
+  eprosima::fastdds::dds::TypeSupport mp_operationdatatype;
 
-    eprosima::fastdds::dds::TypeSupport mp_resultdatatype_detect;
+  eprosima::fastdds::dds::TypeSupport mp_resultdatatype_detect;
 
-    eprosima::fastdds::dds::TypeSupport mp_operationdatatype_detect;
+  eprosima::fastdds::dds::TypeSupport mp_operationdatatype_detect;
 
-    bool detect_ribbon(std::string service_name);
-    bool create_ribbon(std::string service_name);
-    void create_participant(std::string pqos_name);
-    void sendMessageToRibbon(eprosima::fastdds::dds::DataWriter *writer_detect,
-                             eprosima::fastdds::dds::DataReader *reader_detect);
+  bool detect_ribbon(std::string service_name);
+  bool create_ribbon(std::string service_name);
+  void create_participant(std::string pqos_name);
+  void sendMessageToRibbon(eprosima::fastdds::dds::DataWriter *writer_detect,
+                           eprosima::fastdds::dds::DataReader *reader_detect);
 };
 
+// use round-robin to call the server
 class DDSRouter {
-    friend class OperationListener;
-    friend class ResultListener;
+  friend class OperationListener;
+  friend class ResultListener;
 
 public:
-    std::string service_name;
-    static int call_times;
-    int next_enclave_id = 1;
-    std::unordered_map<int, int> enclave_id_to_server_index;
+  std::string service_name;
+  static int call_times;
+  int next_enclave_id = 1;
+  std::unordered_map<int, int> enclave_id_to_server_index;
 
-    DDSRouter(std::string _service_name);
-    virtual ~DDSRouter();
-    bool init();
+  DDSRouter(std::string _service_name);
+  virtual ~DDSRouter();
+  bool init();
 
-    bool add_server(std::string server_guid);
-    bool call_server(std::vector<char> &param,
-                     std::vector<char> &result,
-                     int &enclave_id);
+  bool add_server(std::string server_guid);
+  bool call_server(std::vector<char> &param, std::vector<char> &result,
+                   int &enclave_id);
 
-    class OperationListener
-        : public eprosima::fastdds::dds::DataReaderListener {
-    public:
-        OperationListener(DDSRouter *up) : mp_up(up)
-        {
+  class OperationListener : public eprosima::fastdds::dds::DataReaderListener {
+  public:
+    OperationListener(DDSRouter *up) : mp_up(up) {}
+
+    ~OperationListener() override {}
+
+    DDSRouter *mp_up;
+
+    void on_subscription_matched(
+        eprosima::fastdds::dds::DataReader * /* writer */,
+        const eprosima::fastdds::dds::SubscriptionMatchedStatus
+            &info /* info */) override {
+
+      if (info.current_count_change == 1) {
+        std::cout << "MATCHED" << std::endl;
+      } else if (info.current_count_change == -1) {
+        std::cout << "UNMATCHED" << std::endl;
+      }
+    }
+
+    void on_data_available(eprosima::fastdds::dds::DataReader * /* reader */) {
+      mp_up->call_times++;
+      eprosima::fastdds::dds::SampleInfo m_sampleInfo;
+      clientserver::Operation m_operation;
+      clientserver::Result m_result;
+      mp_up->mp_operation_reader->take_next_sample((char *)&m_operation,
+                                                   &m_sampleInfo);
+      if (m_sampleInfo.valid_data) {
+        m_result.m_guid = m_operation.m_guid;
+        int operation_type = m_operation.m_type;
+        if (operation_type == NOTIFICATION_MESSAGE) {
+          std::vector<char> register_guid_vector = m_operation.m_vector;
+          std::string temp_guid;
+          temp_guid.insert(temp_guid.begin(), register_guid_vector.begin(),
+                           register_guid_vector.end());
+          mp_up->add_server(temp_guid);
+          m_result.m_type = NOTIFICATION_MESSAGE;
+          mp_up->mp_result_writer->write((char *)&m_result);
+        } else if (operation_type == NORMAL_MESSAGE) {
+          std::vector<char> result_vector;
+          mp_up->call_server(m_operation.m_vector, result_vector,
+                             m_operation.m_enclave_id);
+          m_result.m_type = NORMAL_MESSAGE;
+          m_result.m_vector = result_vector;
+          m_result.m_vector_size = result_vector.size();
+          m_result.m_enclave_id = m_operation.m_enclave_id;
+          mp_up->mp_result_writer->write((char *)&m_result);
         }
+      }
+    }
+  };
 
-        ~OperationListener() override
-        {
-        }
+  class ResultListener : public eprosima::fastdds::dds::DataWriterListener {
+  public:
+    ResultListener(DDSRouter *up) : mp_up(up) {}
 
-        DDSRouter *mp_up;
+    ~ResultListener() override {}
 
-        void
-        on_data_available(eprosima::fastdds::dds::DataReader * /* reader */)
-        {
-            mp_up->call_times++;
-            eprosima::fastdds::dds::SampleInfo m_sampleInfo;
-            clientserver::Operation m_operation;
-            clientserver::Result m_result;
-            mp_up->mp_operation_reader->take_next_sample((char *)&m_operation,
-                                                         &m_sampleInfo);
-            if (m_sampleInfo.valid_data) {
-                m_result.m_guid = m_operation.m_guid;
-                int operation_type = m_operation.m_type;
-                if (operation_type == NOTIFICATION_MESSAGE) {
-                    std::vector<char> register_guid_vector =
-                        m_operation.m_vector;
-                    std::string temp_guid;
-                    temp_guid.insert(temp_guid.begin(),
-                                     register_guid_vector.begin(),
-                                     register_guid_vector.end());
-                    mp_up->add_server(temp_guid);
-                    m_result.m_type = NOTIFICATION_MESSAGE;
-                    mp_up->mp_result_writer->write((char *)&m_result);
-                } else if (operation_type == NORMAL_MESSAGE) {
-                    std::vector<char> result_vector;
-                    mp_up->call_server(m_operation.m_vector, result_vector,
-                                       m_operation.m_enclave_id);
-                    m_result.m_type = NORMAL_MESSAGE;
-                    m_result.m_vector = result_vector;
-                    m_result.m_vector_size = result_vector.size();
-                    m_result.m_enclave_id = m_operation.m_enclave_id;
-                    mp_up->mp_result_writer->write((char *)&m_result);
-                }
-            }
-        }
-    };
+    DDSRouter *mp_up;
+  };
 
-    class ResultListener : public eprosima::fastdds::dds::DataWriterListener {
-    public:
-        ResultListener(DDSRouter *up) : mp_up(up)
-        {
-        }
+  OperationListener m_operationsListener;
+  ResultListener m_resultsListener;
 
-        ~ResultListener() override
-        {
-        }
+  class OperationServerListener
+      : public eprosima::fastdds::dds::DataWriterListener {
+  public:
+    OperationServerListener(DDSRouter *up) : mp_up(up) {}
 
-        DDSRouter *mp_up;
-    };
+    ~OperationServerListener() override {}
 
-    OperationListener m_operationsListener;
-    ResultListener m_resultsListener;
+    DDSRouter *mp_up;
 
-    class OperationServerListener
-        : public eprosima::fastdds::dds::DataWriterListener {
-    public:
-        OperationServerListener(DDSRouter *up) : mp_up(up)
-        {
-        }
+    void on_publication_matched(
+        eprosima::fastdds::dds::DataWriter * /* writer */,
+        const eprosima::fastdds::dds::PublicationMatchedStatus & /* info */) {}
+  };
 
-        ~OperationServerListener() override
-        {
-        }
+  class ResultServerListener
+      : public eprosima::fastdds::dds::DataReaderListener {
+  public:
+    ResultServerListener(DDSRouter *up) : mp_up(up) {}
 
-        DDSRouter *mp_up;
+    ~ResultServerListener() override {}
 
-        void on_publication_matched(
-            eprosima::fastdds::dds::DataWriter * /* writer */,
-            const eprosima::fastdds::dds::PublicationMatchedStatus & /* info */)
-        {
-        }
-    };
+    DDSRouter *mp_up;
 
-    class ResultServerListener
-        : public eprosima::fastdds::dds::DataReaderListener {
-    public:
-        ResultServerListener(DDSRouter *up) : mp_up(up)
-        {
-        }
+    void on_data_available(eprosima::fastdds::dds::DataReader * /* reader */) {}
 
-        ~ResultServerListener() override
-        {
-        }
+    void on_subscription_matched(
+        eprosima::fastdds::dds::DataReader * /* reader */,
+        const eprosima::fastdds::dds::SubscriptionMatchedStatus & /* info */) {}
+  };
 
-        DDSRouter *mp_up;
-
-        void
-        on_data_available(eprosima::fastdds::dds::DataReader * /* reader */)
-        {
-        }
-
-        void on_subscription_matched(
-            eprosima::fastdds::dds::DataReader * /* reader */,
-            const eprosima::fastdds::dds::SubscriptionMatchedStatus
-                & /* info */)
-        {
-        }
-    };
-
-    std::vector<OperationServerListener *> m_operationsServerListenerList;
-    std::vector<ResultServerListener *> m_resultsServerListenerList;
+  std::vector<OperationServerListener *> m_operationsServerListenerList;
+  std::vector<ResultServerListener *> m_resultsServerListenerList;
 
 private:
-    eprosima::fastdds::dds::Subscriber *mp_operation_sub;
-    eprosima::fastdds::dds::DataReader *mp_operation_reader;
-    eprosima::fastdds::dds::Publisher *mp_result_pub;
-    eprosima::fastdds::dds::DataWriter *mp_result_writer;
-    eprosima::fastdds::dds::Topic *mp_operation_topic;
-    eprosima::fastdds::dds::Topic *mp_result_topic;
-    eprosima::fastdds::dds::DomainParticipant *mp_participant;
-    eprosima::fastdds::dds::TypeSupport mp_resultdatatype;
-    eprosima::fastdds::dds::TypeSupport mp_operationdatatype;
+  eprosima::fastdds::dds::Subscriber *mp_operation_sub;
+  eprosima::fastdds::dds::DataReader *mp_operation_reader;
+  eprosima::fastdds::dds::Publisher *mp_result_pub;
+  eprosima::fastdds::dds::DataWriter *mp_result_writer;
+  eprosima::fastdds::dds::Topic *mp_operation_topic;
+  eprosima::fastdds::dds::Topic *mp_result_topic;
+  eprosima::fastdds::dds::DomainParticipant *mp_participant;
+  eprosima::fastdds::dds::TypeSupport mp_resultdatatype;
+  eprosima::fastdds::dds::TypeSupport mp_operationdatatype;
 
-    // The following parameters are used to save some information of the real
-    // server
-    std::vector<eprosima::fastdds::dds::Topic *> mp_operation_topic_server_list;
-    std::vector<eprosima::fastdds::dds::Topic *> mp_result_topic_server_list;
-    std::vector<eprosima::fastdds::dds::DataReader *>
-        mp_result_reader_server_list;
-    std::vector<eprosima::fastdds::dds::DataWriter *>
-        mp_operation_writer_server_list;
-    std::vector<int> server_status_list; // 1:running; 2:busy; 3:closed
-    std::vector<std::string> guid_server_list;
-    int index = 0; // The next index of server to be called
-    int server_num = 0;
+  // The following parameters are used to save some information of the real
+  // server
+  std::vector<eprosima::fastdds::dds::Topic *> mp_operation_topic_server_list;
+  std::vector<eprosima::fastdds::dds::Topic *> mp_result_topic_server_list;
+  std::vector<eprosima::fastdds::dds::DataReader *>
+      mp_result_reader_server_list;
+  std::vector<eprosima::fastdds::dds::DataWriter *>
+      mp_operation_writer_server_list;
+  std::vector<int> server_status_list; // 1:running; 2:busy; 3:closed
+  std::vector<std::string> guid_server_list;
+  int index = 0; // The next index of server to be called
+  int server_num = 0;
 
-    void create_participant(std::string pqos_name);
-    bool first_add_server(std::string server_guid, eprosima::fastdds::dds::DataReader *&result_reader,
-                          eprosima::fastdds::dds::DataWriter *&operation_writer,
-                          eprosima::fastdds::dds::Topic *&operation_topic,
-                          eprosima::fastdds::dds::Topic *&result_topic);
-    bool non_first_add_server(std::string server_guid, eprosima::fastdds::dds::DataReader *&result_reader,
-                              eprosima::fastdds::dds::DataWriter *&operation_writer,
-                              eprosima::fastdds::dds::Topic *&operation_topic,
-                              eprosima::fastdds::dds::Topic *&result_topic);
-    void adjust_index();
+  void create_participant(std::string pqos_name);
+  bool first_add_server(std::string server_guid,
+                        eprosima::fastdds::dds::DataReader *&result_reader,
+                        eprosima::fastdds::dds::DataWriter *&operation_writer,
+                        eprosima::fastdds::dds::Topic *&operation_topic,
+                        eprosima::fastdds::dds::Topic *&result_topic);
+  bool
+  non_first_add_server(std::string server_guid,
+                       eprosima::fastdds::dds::DataReader *&result_reader,
+                       eprosima::fastdds::dds::DataWriter *&operation_writer,
+                       eprosima::fastdds::dds::Topic *&operation_topic,
+                       eprosima::fastdds::dds::Topic *&result_topic);
+  void adjust_index();
 };
 
 #endif /* DDSSERVER_H_ */

@@ -114,7 +114,7 @@ bool DDSClient::init(std::string service_name) {
     return false;
   }
 
-  // CREATE THE TOPIC
+  // CREATE THE PARAM TOPIC
   std::string mp_operation_topic_name = service_name + std::string("_Param");
   mp_operation_topic = mp_participant->create_topic(
       mp_operation_topic_name, "Operation", TOPIC_QOS_DEFAULT);
@@ -122,9 +122,8 @@ bool DDSClient::init(std::string service_name) {
     return false;
   }
 
-  // CREATE THE DATAWRITER
+  // CREATE THE DATAWRITER ON PARAM TOPIC
   DataWriterQos wqos = create_dataWriterQos();
-
   mp_operation_writer = mp_operation_pub->create_datawriter(
       mp_operation_topic, wqos, &this->m_operationsListener);
   if (mp_operation_writer == nullptr) {
@@ -137,7 +136,7 @@ bool DDSClient::init(std::string service_name) {
     return false;
   }
 
-  // CREATE THE TOPIC
+  // CREATE THE RESULT TOPIC
   std::string mp_result_topic_name = service_name + std::string("_Result");
   mp_result_topic = mp_participant->create_topic(mp_result_topic_name, "Result",
                                                  TOPIC_QOS_DEFAULT);
@@ -145,7 +144,7 @@ bool DDSClient::init(std::string service_name) {
     return false;
   }
 
-  // CREATE THE DATAREADER
+  // CREATE THE DATAREADER ON RESULT TOPIC
   DataReaderQos rqos = create_dataReaderQos();
   mp_result_reader = mp_result_sub->create_datareader(mp_result_topic, rqos,
                                                       &this->m_resultsListener);
@@ -167,17 +166,30 @@ Serialization *DDSClient::call_service(Serialization *param, int enclave_id) {
   m_operation.m_vector = test_vector;
   m_operation.m_vector_size = test_vector.size();
   m_operation.m_enclave_id = enclave_id;
-  mp_operation_writer->write((char *)&m_operation);
+
+  std::cout << "WRITE BEGIN" << std::endl;
+  if (mp_operation_writer->write((char *)&m_operation)) {
+    std::cout << "WRITE SUCCESS" << std::endl;
+  }
+  std::cout << "WRITE END" << std::endl;
 
   m_result.m_vector.clear();
   do {
     resetResult();
+    std::cout << "wait_for_unread_message" << std::endl;
     mp_result_reader->wait_for_unread_message({RETRY_COUNT, 0});
+    std::cout << "take_next_sample" << std::endl;
     mp_result_reader->take_next_sample((char *)&m_result, &m_sampleInfo);
+
+    if (m_sampleInfo.instance_state !=
+        eprosima::fastdds::dds::ALIVE_INSTANCE_STATE) {
+      std::cout << "NOT OK" << std::endl;
+    }
   } while (m_sampleInfo.instance_state !=
                eprosima::fastdds::dds::ALIVE_INSTANCE_STATE ||
            m_result.m_guid != m_operation.m_guid);
 
+  std::cout << "READ DONE: ENCLAVE_ID = " << m_result.m_enclave_id << std::endl;
   Serialization *result = new Serialization(
       StreamBuffer(&m_result.m_vector[0], m_result.m_vector.size()));
   return result;
@@ -189,8 +201,10 @@ void DDSClient::OperationListener::on_publication_matched(
     eprosima::fastdds::dds::DataWriter *,
     const eprosima::fastdds::dds::PublicationMatchedStatus &info) {
   if (info.current_count_change == 1) {
+    std::cout << "MATCHED 1" << std::endl;
     mp_up->m_operationMatched++;
   } else if (info.current_count_change == -1) {
+    std::cout << "UNMATCHED 1" << std::endl;
     mp_up->m_operationMatched--;
   } else {
     std::cout << info.current_count_change
@@ -204,8 +218,10 @@ void DDSClient::OperationListener::on_publication_matched(
 void DDSClient::ResultListener::on_subscription_matched(
     DataReader *, const SubscriptionMatchedStatus &info) {
   if (info.current_count_change == 1) {
+    std::cout << "MATCHED 2" << std::endl;
     mp_up->m_resultMatched++;
   } else if (info.current_count_change == -1) {
+    std::cout << "UNMATCHED 2" << std::endl;
     mp_up->m_resultMatched--;
   } else {
     std::cout << info.current_count_change

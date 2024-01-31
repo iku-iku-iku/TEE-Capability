@@ -137,7 +137,7 @@ bool DDSServer::detect_ribbon(std::string service_name) {
   mp_resultdatatype_detect.register_type(mp_participant);
   mp_operationdatatype_detect.register_type(mp_participant);
 
-  // CREATE THE TOPIC
+  // CREATE THE PARAM TOPIC
   std::string mp_operation_topic_detect_name =
       service_name + std::string("_Param");
   mp_operation_topic_detect = mp_participant->create_topic(
@@ -146,7 +146,7 @@ bool DDSServer::detect_ribbon(std::string service_name) {
     return false;
   }
 
-  // CREATE THE DATAWRITER
+  // CREATE THE DATAWRITER ON PARAM TOPIC
   DataWriterQos wqos = create_dataWriterQos();
   mp_operation_writer_detect = mp_result_pub->create_datawriter(
       mp_operation_topic_detect, wqos, &this->m_operationsDetectListener);
@@ -154,7 +154,7 @@ bool DDSServer::detect_ribbon(std::string service_name) {
     return false;
   }
 
-  // CREATE THE TOPIC
+  // CREATE THE RESULT TOPIC
   std::string mp_result_topic_detect_name =
       service_name + std::string("_Result");
   mp_result_topic_detect = mp_participant->create_topic(
@@ -163,7 +163,7 @@ bool DDSServer::detect_ribbon(std::string service_name) {
     return false;
   }
 
-  // CREATE THE DATAREADER
+  // CREATE THE DATAREADER ON RESULT TOPIC
   DataReaderQos rqos = create_dataReaderQos();
   mp_result_reader_detect = mp_operation_sub->create_datareader(
       mp_result_topic_detect, rqos, &this->m_resultsDetectListener);
@@ -171,7 +171,7 @@ bool DDSServer::detect_ribbon(std::string service_name) {
     return false;
   }
 
-  // Try to send a message to Ribbon
+  // Try to send a message to Ribbon to detect if there is a ribbon
   int count = 0;
   while ((!isReadyDetect()) && (count < RETRY_COUNT)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(TIMEOUT_HUNDRED));
@@ -183,7 +183,7 @@ bool DDSServer::detect_ribbon(std::string service_name) {
 
   // send a register message to Ribbon
   std::this_thread::sleep_for(std::chrono::milliseconds(TIMEOUT_THOUSAND));
-  isReadyDetect();
+  // isReadyDetect();
 
   sendMessageToRibbon(mp_operation_writer_detect, mp_result_reader_detect);
 
@@ -215,7 +215,7 @@ bool DDSServer::publish_service(std::string service_name) {
   m_guid = get_random_guid();
 
   // Create core service listening Topic pair
-  // CREATE THE PARTICIPANT
+  // CREATE THE SERVER PARTICIPANT
   std::string pqos_name = std::string("server_RTPSParticipant_") + m_guid;
   create_participant(pqos_name);
   if (mp_participant == nullptr) {
@@ -233,7 +233,7 @@ bool DDSServer::publish_service(std::string service_name) {
     return false;
   }
 
-  // CREATE THE TOPIC
+  // CREATE THE RESULT TOPIC
   std::string mp_result_topic_name =
       service_name + std::string("_Result_") + m_guid;
   mp_result_topic = mp_participant->create_topic(mp_result_topic_name, "Result",
@@ -242,7 +242,7 @@ bool DDSServer::publish_service(std::string service_name) {
     return false;
   }
 
-  // CREATE THE DATAWRITER
+  // CREATE THE DATAWRITER ON RESULT TOPIC
   DataWriterQos wqos = create_dataWriterQos();
   mp_result_writer = mp_result_pub->create_datawriter(mp_result_topic, wqos,
                                                       &m_resultsListener);
@@ -256,7 +256,7 @@ bool DDSServer::publish_service(std::string service_name) {
     return false;
   }
 
-  // CREATE THE TOPIC
+  // CREATE THE PARAM TOPIC
   std::string mp_operation_topic_name =
       service_name + std::string("_Param_") + m_guid;
   mp_operation_topic = mp_participant->create_topic(
@@ -265,7 +265,7 @@ bool DDSServer::publish_service(std::string service_name) {
     return false;
   }
 
-  // CREATE THE DATAREADER
+  // CREATE THE DATAREADER ON PARAM TOPIC
   DataReaderQos rqos = create_dataReaderQos();
   mp_operation_reader = mp_operation_sub->create_datareader(
       mp_operation_topic, rqos, &m_operationsListener);
@@ -382,7 +382,7 @@ bool DDSRouter::init() {
     return false;
   }
 
-  // CREATE THE TOPIC
+  // CREATE THE RESULT TOPIC
   std::string mp_result_topic_name = service_name + std::string("_Result");
   mp_result_topic = mp_participant->create_topic(mp_result_topic_name, "Result",
                                                  TOPIC_QOS_DEFAULT);
@@ -390,7 +390,7 @@ bool DDSRouter::init() {
     return false;
   }
 
-  // CREATE THE DATAWRITER
+  // CREATE THE DATAWRITER ON RESULT TOPIC
   DataWriterQos wqos = create_dataWriterQos();
   mp_result_writer = mp_result_pub->create_datawriter(mp_result_topic, wqos,
                                                       &m_resultsListener);
@@ -404,7 +404,7 @@ bool DDSRouter::init() {
     return false;
   }
 
-  // CREATE THE TOPIC
+  // CREATE THE PARAM TOPIC
   std::string mp_operation_topic_name = service_name + std::string("_Param");
   mp_operation_topic = mp_participant->create_topic(
       mp_operation_topic_name, "Operation", TOPIC_QOS_DEFAULT);
@@ -412,7 +412,7 @@ bool DDSRouter::init() {
     return false;
   }
 
-  // CREATE THE DATAREADER
+  // CREATE THE DATAREADER ON PARAM TOPIC
   DataReaderQos rqos = create_dataReaderQos();
   mp_operation_reader = mp_operation_sub->create_datareader(
       mp_operation_topic, rqos, &m_operationsListener);
@@ -576,22 +576,18 @@ void DDSRouter::adjust_index() {
   if (index >= server_num) {
     index = 0;
   }
-  bool if_find_server = false;
+  bool found_server = false;
   int count = 0;
-  while (!if_find_server) {
+  while (!found_server) {
     if (count == server_num) {
       std::this_thread::sleep_for(
           std::chrono::milliseconds(CALL_SERVER_TIMEOUT));
       count = 0;
     }
     if (server_status_list[index] != 1) {
-      index++;
+      index = (index + 1) % server_num;
     } else {
-      if_find_server = true;
-    }
-
-    if (server_status_list[index] != 1 && index >= server_num) {
-      index = 0;
+      found_server = true;
     }
 
     count++;
@@ -600,9 +596,12 @@ void DDSRouter::adjust_index() {
 
 bool DDSRouter::call_server(std::vector<char> &param, std::vector<char> &result,
                             int &enclave_id) {
+  // enclave id is similar to process id
   if (enclave_id > 0) {
+    // use specific server
     index = enclave_id_to_server_index[enclave_id];
   } else {
+    // find a server with round-robin algorithm
     adjust_index();
   }
 
@@ -620,6 +619,7 @@ bool DDSRouter::call_server(std::vector<char> &param, std::vector<char> &result,
     m_operation_server.m_enclave_id = enclave_id;
   }
   enclave_id = m_operation_server.m_enclave_id;
+  std::cout << "ENCLAVE ID: " << enclave_id << std::endl;
   mp_operation_writer_server_list[index]->write((char *)&m_operation_server);
   do {
     m_result_server.m_guid = c_Guid_Unknown;
@@ -633,11 +633,11 @@ bool DDSRouter::call_server(std::vector<char> &param, std::vector<char> &result,
 
   result = m_result_server.m_vector;
   index++;
-  if (m_operation_server.m_enclave_id > 0) {
-    result[0] = enclave_id;
-    result[ONE] = 0;
-    result[TWO] = 0;
-    result[THREE] = 0;
-  }
+  /* if (m_operation_server.m_enclave_id > 0) { */
+  /*   result[0] = enclave_id; */
+  /*   result[ONE] = 0; */
+  /*   result[TWO] = 0; */
+  /*   result[THREE] = 0; */
+  /* } */
   return true;
 }
