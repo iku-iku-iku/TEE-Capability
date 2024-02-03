@@ -22,7 +22,9 @@
 #include <utility>
 #include <vector>
 
-#define MARK_LEN sizeof(uint16_t)
+typedef uint32_t length_t;
+
+#define MARK_LEN sizeof(length_t)
 
 class StreamBuffer : public std::vector<char> {
 public:
@@ -36,7 +38,7 @@ public:
   void reset() { m_curpos = 0; }
   const char *data() { return &(*this)[0]; }
   const char *current() { return &(*this)[m_curpos]; }
-  void offset(int k) { m_curpos += k; }
+  void offset(length_t k) { m_curpos += k; }
   bool is_eof() { return (m_curpos >= size()); }
   void input(char *in, size_t len) { insert(end(), in, in + len); }
   int findc(char c) {
@@ -49,7 +51,7 @@ public:
 
 private:
   // current byte stream position
-  unsigned int m_curpos;
+  length_t m_curpos;
 };
 
 struct PackedMigrateCallResult {
@@ -73,14 +75,14 @@ public:
 public:
   void reset() { m_iodevice.reset(); }
   int size() { return m_iodevice.size(); }
-  void skip_raw_date(int k) { m_iodevice.offset(k); }
+  void skip_raw_date(length_t k) { m_iodevice.offset(k); }
   const char *data() { return m_iodevice.data(); }
-  void byte_orser(char *in, int len) {
+  void byte_orser(char *in, length_t len) {
     if (m_byteorder == BigEndian) {
       std::reverse(in, in + len);
     }
   }
-  void write_raw_data(char *in, int len) {
+  void write_raw_data(char *in, length_t len) {
     m_iodevice.input(in, len);
     m_iodevice.offset(len);
   }
@@ -116,7 +118,7 @@ public:
   }
 
   // return x bytes of data after the current position
-  void get_length_mem(char *p, int len) {
+  void get_length_mem(char *p, length_t len) {
     if (memcpy_s(p, len, m_iodevice.current(), len) != 0) {
       return;
     }
@@ -152,7 +154,7 @@ private:
 };
 
 template <typename T> inline void Serialization::output_type(T &t) {
-  int len = sizeof(T);
+  length_t len = sizeof(T);
   char *d = new char[len];
   if (!m_iodevice.is_eof()) {
     memcpy_s(d, len, m_iodevice.current(), len);
@@ -167,7 +169,7 @@ template <> inline void Serialization::output_type(std::string &in) {
   char *d = new char[MARK_LEN];
   memcpy_s(d, MARK_LEN, m_iodevice.current(), MARK_LEN);
   byte_orser(d, MARK_LEN);
-  int len = *reinterpret_cast<uint16_t *>(&d[0]);
+  auto len = *reinterpret_cast<length_t *>(&d[0]);
   m_iodevice.offset(MARK_LEN);
   delete[] d;
   if (len == 0)
@@ -180,7 +182,7 @@ template <> inline void Serialization::output_type(std::vector<char> &in) {
   char *d = new char[MARK_LEN];
   memcpy_s(d, MARK_LEN, m_iodevice.current(), MARK_LEN);
   byte_orser(d, MARK_LEN);
-  int len = *reinterpret_cast<uint16_t *>(&d[0]);
+  auto len = *reinterpret_cast<length_t *>(&d[0]);
   m_iodevice.offset(MARK_LEN);
   delete[] d;
   if (len == 0)
@@ -196,7 +198,7 @@ inline void Serialization::output_type(PackedMigrateCallResult &in) {
 }
 
 template <typename T> inline void Serialization::input_type(T t) {
-  int len = sizeof(T);
+  length_t len = sizeof(T);
   char *d = new char[len];
   const char *p = reinterpret_cast<const char *>(&t);
   memcpy_s(d, len, p, len);
@@ -207,10 +209,10 @@ template <typename T> inline void Serialization::input_type(T t) {
 
 template <> inline void Serialization::input_type(std::string in) {
   // store the string length first
-  uint16_t len = in.size();
+  length_t len = in.size();
   char *p = reinterpret_cast<char *>(&len);
-  byte_orser(p, sizeof(uint16_t));
-  m_iodevice.input(p, sizeof(uint16_t));
+  byte_orser(p, sizeof(length_t));
+  m_iodevice.input(p, sizeof(length_t));
   // store string content
   if (len <= 0)
     return;
@@ -222,10 +224,10 @@ template <> inline void Serialization::input_type(std::string in) {
 
 template <> inline void Serialization::input_type(std::vector<char> in) {
   // store the string length first
-  uint16_t len = in.size();
+  length_t len = in.size();
   char *p = reinterpret_cast<char *>(&len);
-  byte_orser(p, sizeof(uint16_t));
-  m_iodevice.input(p, sizeof(uint16_t));
+  byte_orser(p, sizeof(length_t));
+  m_iodevice.input(p, sizeof(length_t));
   // store string content
   if (len <= 0)
     return;

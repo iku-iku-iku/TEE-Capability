@@ -16,32 +16,31 @@
 #ifndef CLIENTSERVERTYPES_H_
 #define CLIENTSERVERTYPES_H_
 
+#include "fastrtps/TopicDataType.h"
+#include "fastrtps/rtps/common/all_common.h"
 #include <cerrno>
 #include <cstring>
 #include <vector>
-#include "fastrtps/TopicDataType.h"
-#include "fastrtps/rtps/common/all_common.h"
 
-inline int memcpy_s(void *dest, size_t destSize, const void *src, size_t count)
-{
-    if (dest == nullptr || src == nullptr)
-        return EINVAL;
-    if (destSize < count)
-        return ERANGE;
-    memmove(dest, src, count);
-    return 0;
+inline int memcpy_s(void *dest, size_t destSize, const void *src,
+                    size_t count) {
+  if (dest == nullptr || src == nullptr)
+    return EINVAL;
+  if (destSize < count)
+    return ERANGE;
+  memmove(dest, src, count);
+  return 0;
 }
 
-inline int memset_s(void *dest, size_t destSize, int ch, size_t count)
-{
-    if (dest == nullptr || ch < 0) {
-        return EINVAL;
-    }
-    if (destSize < count) {
-        return ERANGE;
-    }
-    memset(dest, ch, count);
-    return 0;
+inline int memset_s(void *dest, size_t destSize, int ch, size_t count) {
+  if (dest == nullptr || ch < 0) {
+    return EINVAL;
+  }
+  if (destSize < count) {
+    return ERANGE;
+  }
+  memset(dest, ch, count);
+  return 0;
 }
 
 namespace clientserver {
@@ -54,100 +53,85 @@ namespace clientserver {
 
 #define NOTIFICATION_MESSAGE 0
 #define NORMAL_MESSAGE 1
+#define DUMMY_MESSAGE 2
 
 #define ENCLAVE_UNRELATED (-1)
 #define ENCLAVE_UNKNOWN 0
 
 class Operation {
 public:
-    eprosima::fastrtps::rtps::GUID_t m_guid;
-    int m_type; // 0: notification message, 1: normal message
-    int m_vector_size;
-    int m_enclave_id =
-        ENCLAVE_UNRELATED; // -1: not related to enclave, 0: the enclave_id is
-                           // unknown, positive number: the id of the enclave,
-                           // which needs to be bound to the corresponding
-                           // server.
-    std::vector<char> m_vector;
-    Operation() : m_vector_size(0)
-    {
-    }
+  eprosima::fastrtps::rtps::GUID_t m_guid;
+  int m_type; // 0: notification message, 1: normal message
+  int m_vector_size;
+  int m_enclave_id =
+      ENCLAVE_UNRELATED; // -1: not related to enclave, 0: the enclave_id is
+                         // unknown, positive number: the id of the enclave,
+                         // which needs to be bound to the corresponding
+                         // server.
+  std::vector<char> m_vector;
+  Operation() : m_vector_size(0) {}
 
-    ~Operation()
-    {
-    }
+  ~Operation() {}
 };
 
 class OperationDataType : public eprosima::fastrtps::TopicDataType {
 public:
-    OperationDataType()
-    {
-        setName("Operation");
-        m_typeSize = GUID_SIZE + THREE * sizeof(int) +
-                     MAX_TRANSFER_VECTOR_SIZE * sizeof(char);
-        m_isGetKeyDefined = false;
-    }
+  OperationDataType() {
+    setName("Operation");
+    m_typeSize = GUID_SIZE + THREE * sizeof(int) +
+                 MAX_TRANSFER_VECTOR_SIZE * sizeof(char);
+    m_isGetKeyDefined = false;
+  }
 
-    ~OperationDataType()
-    {
-    }
+  ~OperationDataType() {}
 
-    bool serialize(void *data,
-                   eprosima::fastrtps::rtps::SerializedPayload_t *payload);
-    bool deserialize(eprosima::fastrtps::rtps::SerializedPayload_t *payload,
-                     void *data);
-    std::function<uint32_t()> getSerializedSizeProvider(void *data);
-    bool getKey(void *, eprosima::fastrtps::rtps::InstanceHandle_t *, bool)
-    {
-        return false;
-    }
+  bool serialize(void *data,
+                 eprosima::fastrtps::rtps::SerializedPayload_t *payload);
+  bool deserialize(eprosima::fastrtps::rtps::SerializedPayload_t *payload,
+                   void *data);
+  std::function<uint32_t()> getSerializedSizeProvider(void *data);
+  bool getKey(void *, eprosima::fastrtps::rtps::InstanceHandle_t *, bool) {
+    return false;
+  }
 
-    void *createData();
-    void deleteData(void *data);
+  void *createData();
+  void deleteData(void *data);
 };
 
 class Result {
 public:
-    eprosima::fastrtps::rtps::GUID_t m_guid;
-    int m_type; // 0: notification message, 1: normal message
-    int m_vector_size;
-    int m_enclave_id = ENCLAVE_UNRELATED;
-    std::vector<char> m_vector;
-    Result() : m_vector_size(0)
-    {
-    }
+  eprosima::fastrtps::rtps::GUID_t m_guid;
+  int m_type; // 0: notification message, 1: normal message
+  int m_vector_size;
+  int m_enclave_id = ENCLAVE_UNRELATED;
+  std::vector<char> m_vector;
+  Result() : m_vector_size(0) {}
 
-    ~Result()
-    {
-    }
+  ~Result() {}
 };
 
 class ResultDataType : public eprosima::fastrtps::TopicDataType {
 public:
-    ResultDataType()
-    {
-        setName("Result");
-        m_typeSize = GUID_SIZE + THREE * sizeof(int) +
-                     MAX_TRANSFER_VECTOR_SIZE * sizeof(char);
-        m_isGetKeyDefined = false;
-    }
+  ResultDataType() {
+    setName("Result");
+    m_typeSize = GUID_SIZE + THREE * sizeof(int) +
+                 MAX_TRANSFER_VECTOR_SIZE * sizeof(char);
+    m_isGetKeyDefined = false;
+  }
 
-    ~ResultDataType()
-    {
-    }
+  ~ResultDataType() {}
 
-    bool serialize(void *data,
-                   eprosima::fastrtps::rtps::SerializedPayload_t *payload);
-    bool deserialize(eprosima::fastrtps::rtps::SerializedPayload_t *payload,
-                     void *data);
-    std::function<uint32_t()> getSerializedSizeProvider(void *data);
-    bool getKey(void *, eprosima::fastrtps::rtps::InstanceHandle_t *, bool)
-    {
-        return false;
-    }
+  bool serialize(void *data,
+                 eprosima::fastrtps::rtps::SerializedPayload_t *payload);
+  bool deserialize(eprosima::fastrtps::rtps::SerializedPayload_t *payload,
+                   void *data);
+  std::function<uint32_t()> getSerializedSizeProvider(void *data);
+  bool getKey(void *, eprosima::fastrtps::rtps::InstanceHandle_t *, bool) {
+    return false;
+  }
 
-    void *createData();
-    void deleteData(void *data);
+  void *createData();
+  void deleteData(void *data);
 };
 } // namespace clientserver
 #endif /* CLIENTSERVERTYPES_H_ */

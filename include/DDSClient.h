@@ -29,7 +29,7 @@
 #include <fastdds/dds/subscriber/Subscriber.hpp>
 #include <fastdds/dds/topic/Topic.hpp>
 
-#define HISTORY_DEPTH 1000
+#define HISTORY_DEPTH 10000
 #define MAX_SAMPLES 1500
 #define ALLOC_SAMPLES 1000
 #define RETRY_COUNT 10

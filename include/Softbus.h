@@ -220,6 +220,7 @@ public:
       m_client.init(service_name);
       service_list.insert(service_name);
     }
+    printf("CALL SERVICE: %s\n", service_name.c_str());
 
     Serialization ds;
     ds << service_name;

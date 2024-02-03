@@ -171,8 +171,8 @@ int enclave_receiver(std::vector<char> enclave_file, std::string enclave_name,
       return 0;
     }
   }
-  printf("RECEIVED NEW ENCLAVE FILE: %s:%f\n", enclave_name.c_str(),
-         new_version);
+  printf("RECEIVED NEW ENCLAVE FILE: %s(%luB):%f\n", enclave_name.c_str(),
+         enclave_file.size(), new_version);
   std::string enclave_filename = enclave_name + ENCLAVE_FILE_EXTENSION;
   if (!write_file(enclave_filename.c_str(), enclave_file)) {
     return -1;
@@ -214,11 +214,12 @@ init_distributed_tee_context(DistributedTeeConfig config) {
   } else {
     context->client = new TeeClient;
 
-    if (config.mode == MODE::Migrate) {
+    if (config.mode == MODE::Migrate ||
+        config.mode == MODE::Transparent && !exist_local_tee()) {
       std::vector<char> bytes;
       if (read_file("enclave.signed.so", bytes)) {
         const std::string &enclave_name = config.name;
-        std::cout << "BEGIN MIGRATED ENCLAVE" << std::endl;
+        printf("BEGIN MIGRATED ENCLAVE (%luB)", bytes.size());
         g_current_dtee_context->client->call_service<int>(
             "enclave_receiver", g_current_dtee_context->enclave_id, bytes,
             enclave_name, config.version);

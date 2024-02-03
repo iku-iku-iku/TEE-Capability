@@ -15,6 +15,7 @@
 
 #include "DDSServer.h"
 
+#include "ClientServerTypes.h"
 #include "Softbus.h"
 #include <fastdds/dds/domain/DomainParticipantFactory.hpp>
 #include <fastdds/dds/subscriber/qos/DataReaderQos.hpp>
@@ -286,7 +287,7 @@ void DDSServer::OperationListener::on_data_available(
                                                &m_sampleInfo);
   if (m_sampleInfo.valid_data) {
     int operation_type = m_operation.m_type;
-    if (operation_type != NOTIFICATION_MESSAGE) {
+    if (operation_type == NORMAL_MESSAGE) {
       ++mp_up->m_n_served;
       m_result.m_guid = m_operation.m_guid;
 
@@ -308,6 +309,8 @@ void DDSServer::OperationListener::on_data_available(
       m_result.m_vector = result_vector;
       m_result.m_enclave_id = m_operation.m_enclave_id;
       mp_up->mp_result_writer->write((char *)&m_result);
+    } else if (operation_type == DUMMY_MESSAGE) {
+      printf("SERVER RECEVIED DUMMPY MESSAGE\n");
     }
   }
 }
@@ -568,7 +571,6 @@ bool DDSRouter::add_server(std::string server_guid) {
   server_status_list.push_back(1);
   guid_server_list.push_back(server_guid);
   server_num++;
-
   return true;
 }
 
@@ -608,9 +610,7 @@ bool DDSRouter::call_server(std::vector<char> &param, std::vector<char> &result,
   SampleInfo m_sampleInfo_server;
   clientserver::Operation m_operation_server;
   clientserver::Result m_result_server;
-  m_operation_server.m_type = NORMAL_MESSAGE;
-  m_operation_server.m_vector = param;
-  m_operation_server.m_vector_size = param.size();
+
   if (enclave_id == 0) {
     m_operation_server.m_enclave_id = next_enclave_id;
     enclave_id_to_server_index[next_enclave_id] = index;
@@ -618,8 +618,18 @@ bool DDSRouter::call_server(std::vector<char> &param, std::vector<char> &result,
   } else {
     m_operation_server.m_enclave_id = enclave_id;
   }
+
   enclave_id = m_operation_server.m_enclave_id;
-  std::cout << "ENCLAVE ID: " << enclave_id << std::endl;
+  printf("ENCLAVE ID: %d\n", enclave_id);
+  /* m_operation_server.m_type = DUMMY_MESSAGE; */
+  /* // TODO: this is necessary but don't know why */
+  /* mp_operation_writer_server_list[index]->write((char *)&m_operation_server);
+   */
+
+  m_operation_server.m_type = NORMAL_MESSAGE;
+  m_operation_server.m_vector = param;
+  m_operation_server.m_vector_size = param.size();
+
   mp_operation_writer_server_list[index]->write((char *)&m_operation_server);
   do {
     m_result_server.m_guid = c_Guid_Unknown;
@@ -627,17 +637,15 @@ bool DDSRouter::call_server(std::vector<char> &param, std::vector<char> &result,
         {RETRY_COUNT, 0});
     mp_result_reader_server_list[index]->take_next_sample(
         (char *)&m_result_server, &m_sampleInfo_server);
+    if (m_sampleInfo_server.instance_state !=
+        eprosima::fastdds::dds::ALIVE_INSTANCE_STATE) {
+      printf("NO REPLY FROM SERVER\n");
+    }
   } while (m_sampleInfo_server.instance_state !=
                eprosima::fastdds::dds::ALIVE_INSTANCE_STATE ||
            m_result_server.m_guid != m_operation_server.m_guid);
 
   result = m_result_server.m_vector;
   index++;
-  /* if (m_operation_server.m_enclave_id > 0) { */
-  /*   result[0] = enclave_id; */
-  /*   result[ONE] = 0; */
-  /*   result[TWO] = 0; */
-  /*   result[THREE] = 0; */
-  /* } */
   return true;
 }

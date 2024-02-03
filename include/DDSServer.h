@@ -34,7 +34,7 @@
 #include <vector>
 
 #define CALL_SERVER_TIMEOUT 1000
-#define HISTORY_DEPTH 1000
+#define HISTORY_DEPTH 10000
 #define MAX_SAMPLES 1500
 #define ALLOC_SAMPLES 1000
 #define TIMEOUT_THOUSAND 1000
@@ -230,9 +230,9 @@ public:
             &info /* info */) override {
 
       if (info.current_count_change == 1) {
-        std::cout << "MATCHED" << std::endl;
+        std::cout << "DDSRouter SUBSCRIPTION MATCHED" << std::endl;
       } else if (info.current_count_change == -1) {
-        std::cout << "UNMATCHED" << std::endl;
+        std::cout << "DDSRouter SUBSCRIPTION UNMATCHED" << std::endl;
       }
     }
 
@@ -241,8 +241,9 @@ public:
       eprosima::fastdds::dds::SampleInfo m_sampleInfo;
       clientserver::Operation m_operation;
       clientserver::Result m_result;
-      mp_up->mp_operation_reader->take_next_sample((char *)&m_operation,
-                                                   &m_sampleInfo);
+      auto ret = mp_up->mp_operation_reader->take_next_sample(
+          (char *)&m_operation, &m_sampleInfo);
+
       if (m_sampleInfo.valid_data) {
         m_result.m_guid = m_operation.m_guid;
         int operation_type = m_operation.m_type;
@@ -256,12 +257,17 @@ public:
           mp_up->mp_result_writer->write((char *)&m_result);
         } else if (operation_type == NORMAL_MESSAGE) {
           std::vector<char> result_vector;
+          printf("DDSRouter Received %lu\n", m_operation.m_vector.size());
+
           mp_up->call_server(m_operation.m_vector, result_vector,
                              m_operation.m_enclave_id);
           m_result.m_type = NORMAL_MESSAGE;
           m_result.m_vector = result_vector;
           m_result.m_vector_size = result_vector.size();
           m_result.m_enclave_id = m_operation.m_enclave_id;
+          mp_up->mp_result_writer->write((char *)&m_result);
+        } else {
+          printf("DDSRouter Received Dummy\n");
           mp_up->mp_result_writer->write((char *)&m_result);
         }
       }

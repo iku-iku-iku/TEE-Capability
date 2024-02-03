@@ -18,6 +18,7 @@
 #include <fastdds/dds/domain/DomainParticipantFactory.hpp>
 #include <fastdds/dds/subscriber/SampleInfo.hpp>
 #include <fastdds/dds/subscriber/qos/DataReaderQos.hpp>
+#include <thread>
 
 using namespace eprosima::fastdds::dds;
 using namespace eprosima::fastrtps::rtps;
@@ -83,6 +84,7 @@ static DataWriterQos create_dataWriterQos() {
   wqos.resource_limits().max_samples = MAX_SAMPLES;
   wqos.resource_limits().allocated_samples = ALLOC_SAMPLES;
   wqos.reliability().kind = RELIABLE_RELIABILITY_QOS;
+  wqos.publish_mode().kind = eprosima::fastdds::dds::ASYNCHRONOUS_PUBLISH_MODE;
   return wqos;
 }
 
@@ -162,16 +164,24 @@ Serialization *DDSClient::call_service(Serialization *param, int enclave_id) {
     test_vector.push_back(param->data()[i]);
   }
 
+  m_operation.m_type = DUMMY_MESSAGE;
+  m_operation.m_enclave_id = enclave_id;
+  do {
+    // TODO: this dummy write is necessary, otherwise subscriber can't receive
+    // following messages. Don't know why for now.
+    mp_operation_writer->write((char *)&m_operation);
+    resetResult();
+    mp_result_reader->wait_for_unread_message({1, 0});
+    mp_result_reader->take_next_sample((char *)&m_result, &m_sampleInfo);
+  } while (m_sampleInfo.instance_state !=
+           eprosima::fastdds::dds::ALIVE_INSTANCE_STATE);
+
   m_operation.m_type = NORMAL_MESSAGE;
   m_operation.m_vector = test_vector;
   m_operation.m_vector_size = test_vector.size();
-  m_operation.m_enclave_id = enclave_id;
-
-  std::cout << "WRITE BEGIN" << std::endl;
-  if (mp_operation_writer->write((char *)&m_operation)) {
-    std::cout << "WRITE SUCCESS" << std::endl;
-  }
-  std::cout << "WRITE END" << std::endl;
+  printf("WRITE (%luB) ENCLAVE ID: %d\n", m_operation.m_vector.size(),
+         enclave_id);
+  mp_operation_writer->write((char *)&m_operation);
 
   m_result.m_vector.clear();
   do {
