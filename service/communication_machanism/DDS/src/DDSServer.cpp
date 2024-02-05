@@ -294,11 +294,13 @@ void DDSServer::OperationListener::on_data_available(
       std::vector<char> test_vector = m_operation.m_vector;
       Serialization ds(StreamBuffer(&test_vector[0], test_vector.size()));
 
-      std::string funname;
-      ds >> funname;
+      std::string func_name;
+      ds >> func_name;
 
+      printf("BEGIN CALL FUNC: %s\n", func_name.c_str());
       Serialization *result =
-          server->call_(funname, ds.current(), ds.size() - funname.size());
+          server->call_(func_name, ds.current(), ds.size() - func_name.size());
+      printf("END CALL FUNC: %s\n", func_name.c_str());
 
       std::vector<char> result_vector;
       for (int i = 0; i < result->size(); i++) {

@@ -164,6 +164,7 @@ public:
   Serialization *call_(std::string name, const char *data, int len) {
     Serialization *ds = new Serialization();
     if (service_to_func.find(name) == service_to_func.end()) {
+      printf("Service %s not found\n", name.c_str());
       return ds;
     }
     auto fun = service_to_func[name];
@@ -203,36 +204,42 @@ public:
   }
 
   template <typename V> V net_call(Serialization &ds, int enclave_id = -1) {
-    while (!m_client.isReady()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(NET_CALL_TIMEOUT));
-    }
-
-    std::cout << "NET CALL " << enclave_id << std::endl;
-    Serialization *result = m_client.call_service(&ds, enclave_id);
-    V val;
-    (*result) >> val;
-    return val;
+    /* std::cout << "NET CALL " << enclave_id << std::endl; */
+    /* Serialization *result = m_client.call_service(&ds, enclave_id); */
+    /* V val; */
+    /* (*result) >> val; */
+    /* return val; */
   }
 
   template <typename V, typename... Params>
   V call_service(std::string service_name, int enclave_id, Params... params) {
-    if (service_list.count(service_name) <= 0) {
-      m_client.init(service_name);
-      service_list.insert(service_name);
+    if (m_client_map.count(service_name) <= 0) {
+      m_client_map.insert({service_name, std::make_unique<ClientProxy>()});
+      m_client_map[service_name]->init(service_name);
     }
     printf("CALL SERVICE: %s\n", service_name.c_str());
 
     Serialization ds;
     ds << service_name;
     package_params(ds, params...);
-    return net_call<V>(ds, enclave_id);
+
+    while (!m_client_map[service_name]->isReady()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(NET_CALL_TIMEOUT));
+    }
+
+    Serialization *result =
+        m_client_map[service_name]->call_service(&ds, enclave_id);
+    V val;
+    (*result) >> val;
+    return val;
   }
 
-  ClientProxy &get_client_proxy() { return m_client; }
+  ClientProxy &get_client_proxy(const std::string &service) {
+    return *m_client_map[service];
+  }
 
 private:
-  ClientProxy m_client;
-  std::set<std::string> service_list;
+  std::unordered_map<std::string, std::unique_ptr<ClientProxy>> m_client_map;
 };
 
 #endif

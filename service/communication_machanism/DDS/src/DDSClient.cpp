@@ -35,25 +35,29 @@ DDSClient::DDSClient()
 }
 
 DDSClient::~DDSClient() {
-  if (mp_operation_writer != nullptr) {
+  if (mp_operation_pub != nullptr && mp_operation_writer != nullptr) {
     mp_operation_pub->delete_datawriter(mp_operation_writer);
   }
-  if (mp_operation_pub != nullptr) {
+  if (mp_participant != nullptr && mp_operation_pub != nullptr) {
     mp_participant->delete_publisher(mp_operation_pub);
   }
-  if (mp_operation_topic != nullptr) {
+  if (mp_participant != nullptr && mp_operation_topic != nullptr) {
     mp_participant->delete_topic(mp_operation_topic);
   }
-  if (mp_result_reader != nullptr) {
+  if (mp_result_sub != nullptr && mp_result_reader != nullptr) {
     mp_result_sub->delete_datareader(mp_result_reader);
   }
-  if (mp_result_sub != nullptr) {
+  if (mp_participant != nullptr && mp_result_sub != nullptr) {
     mp_participant->delete_subscriber(mp_result_sub);
   }
-  if (mp_result_topic != nullptr) {
+  if (mp_participant != nullptr && mp_result_topic != nullptr) {
     mp_participant->delete_topic(mp_result_topic);
   }
-  DomainParticipantFactory::get_instance()->delete_participant(mp_participant);
+
+  auto instance = DomainParticipantFactory::get_instance();
+  if (instance) {
+    instance->delete_participant(mp_participant);
+  }
 }
 
 void DDSClient::create_participant(std::string pqos_name) {

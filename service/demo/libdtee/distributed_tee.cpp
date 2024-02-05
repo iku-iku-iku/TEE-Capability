@@ -223,9 +223,10 @@ init_distributed_tee_context(DistributedTeeConfig config) {
         g_current_dtee_context->client->call_service<int>(
             "enclave_receiver", g_current_dtee_context->enclave_id, bytes,
             enclave_name, config.version);
-        int enclave_id = g_current_dtee_context->client->get_client_proxy()
-                             .get_result()
-                             .m_enclave_id;
+        int enclave_id =
+            g_current_dtee_context->client->get_client_proxy("enclave_receiver")
+                .get_result()
+                .m_enclave_id;
         // the enclave now resides in the node with *enclave_id*
         g_current_dtee_context->enclave_id = enclave_id;
         std::cout << "END MIGRATED ENCLAVE" << std::endl;

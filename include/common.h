@@ -3,6 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+typedef char in_char;
+typedef char out_char;
+
 #ifdef __TEE
 extern "C" void eapp_print(const char *, ...);
 #else
@@ -17,7 +20,7 @@ extern "C" void eapp_print(const char *, ...);
 
 #define TEE_ASSERT(x, ...)                                                     \
   if (!(x)) {                                                                  \
-    eapp_print(__VA_ARGS__)                                                    \
+    eapp_print(__VA_ARGS__);                                                   \
   }
 
 typedef struct _enclave_sealed_data_t {
