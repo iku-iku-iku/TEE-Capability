@@ -27,73 +27,16 @@
 #include <sstream>
 #include <string>
 
-#include <EnclaveEngine.h>
 #include <cstdlib>
-#include <face_recognition_shared_param.h>
 #include <pthread.h>
 
 #include <fstream>
 #include <vector>
 using namespace eprosima::fastrtps;
 using namespace eprosima::fastrtps::rtps;
-using namespace enclaveelf;
-using namespace demoparam;
-using namespace penglaienclave;
-using std::cout;
-using std::endl;
 
 enum class E_SIDE { CLIENT, SERVER };
 
-static void printHex(unsigned char *c, int n) {
-  int i;
-  for (i = 0; i < n; i++) {
-    printf("0x%02X, ", c[i]);
-    if ((i % FOUR) == THREE)
-      printf(" ");
-
-    if ((i % SIXTEEN) == FIFTEEN)
-      printf("\n");
-  }
-  if ((i % SIXTEEN) != 0)
-    printf("\n");
-}
-
-struct args {
-  void *in;
-  int i;
-};
-
-static int PLenclave_operation_remote(std::string enclave_name) {
-  // PLenclave_remote(enclave_name);
-  return 3;
-}
-
-static int check_args(E_SIDE *side, int argc, char **argv, int samples) {
-  if (argc > ONE) {
-    if (strcmp(argv[ONE], "client") == 0) {
-      *side = E_SIDE::CLIENT;
-    } else if (strcmp(argv[ONE], "server") == 0) {
-      *side = E_SIDE::SERVER;
-    } else {
-      cout << "Argument 1 needs to be client OR server" << endl;
-      return 0;
-    }
-    if (argc > THREE) {
-      std::istringstream iss(argv[THREE]);
-      if (!(iss >> samples)) {
-        cout << "Problem reading samples number,using "
-                "default 10000 "
-                "samples "
-             << endl;
-        samples = SAMPLES;
-      }
-    }
-    return 1;
-  } else {
-    cout << "Client Server Test needs 1 arguments: (client/server)" << endl;
-    return 0;
-  }
-}
 bool write_file(const char *path, const std::vector<char> &bytes) {
   std::ofstream file(path, std::ios::binary);
   if (!file.is_open()) {
