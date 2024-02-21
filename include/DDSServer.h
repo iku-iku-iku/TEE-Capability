@@ -121,7 +121,8 @@ public:
 
     void on_publication_matched(
         eprosima::fastdds::dds::DataWriter * /* writer */,
-        const eprosima::fastdds::dds::PublicationMatchedStatus &info) {
+        const eprosima::fastdds::dds::PublicationMatchedStatus &info) override {
+      std::cout << "[DDSSERVER] PUBLICATION MATCHED" << std::endl;
       if (info.current_count_change == 1) {
         mp_up->m_operationMatchedDetect++;
       } else if (info.current_count_change == -1) {
@@ -145,11 +146,14 @@ public:
 
     DDSServer *mp_up;
 
-    void on_data_available(eprosima::fastdds::dds::DataReader * /* reader */) {}
+    void on_data_available(
+        eprosima::fastdds::dds::DataReader * /* reader */) override {}
 
     void on_subscription_matched(
         eprosima::fastdds::dds::DataReader * /* reader */,
-        const eprosima::fastdds::dds::SubscriptionMatchedStatus &info) {
+        const eprosima::fastdds::dds::SubscriptionMatchedStatus &info)
+        override {
+      std::cout << "[DDSSERVER] SUBSCRIPTION MATCHED" << std::endl;
       if (info.current_count_change == 1) {
         mp_up->m_resultMatchedDetect++;
       } else if (info.current_count_change == -1) {
@@ -206,7 +210,7 @@ public:
   std::string service_name;
   static int call_times;
   int next_enclave_id = 1;
-  std::unordered_map<int, int> enclave_id_to_server_index;
+  static std::unordered_map<int, int> enclave_id_to_server_index;
 
   DDSRouter(std::string _service_name);
   virtual ~DDSRouter();
@@ -272,6 +276,7 @@ public:
           mp_up->mp_result_writer->write((char *)&m_result);
         } else {
           printf("DDSRouter Received Dummy\n");
+          m_result.m_guid = m_operation.m_guid;
           mp_up->mp_result_writer->write((char *)&m_result);
         }
       }

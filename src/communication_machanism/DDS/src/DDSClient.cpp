@@ -165,9 +165,10 @@ bool DDSClient::init(std::string service_name) {
 
 Serialization *DDSClient::call_service(Serialization *param, int enclave_id) {
   SampleInfo m_sampleInfo;
-  std::vector<char> test_vector;
+  std::vector<char> param_to_send;
+
   for (int i = 0; i < param->size(); i++) {
-    test_vector.push_back(param->data()[i]);
+    param_to_send.push_back(param->data()[i]);
   }
 
   auto randomize_guid = [](GUID_t &guid) {
@@ -187,6 +188,7 @@ Serialization *DDSClient::call_service(Serialization *param, int enclave_id) {
 
   m_operation.m_type = DUMMY_MESSAGE;
   m_operation.m_enclave_id = enclave_id;
+  printf("randomize_guid\n");
   randomize_guid(m_operation.m_guid);
 
   printf("BEGIN DUMMY WRITE\n");
@@ -208,8 +210,8 @@ Serialization *DDSClient::call_service(Serialization *param, int enclave_id) {
   printf("END DUMMY WRITE\n");
 
   m_operation.m_type = NORMAL_MESSAGE;
-  m_operation.m_vector = test_vector;
-  m_operation.m_vector_size = test_vector.size();
+  m_operation.m_vector = param_to_send;
+  m_operation.m_vector_size = param_to_send.size();
 
   // use guid to identify the message
   randomize_guid(m_operation.m_guid);

@@ -32,7 +32,7 @@
 #define HISTORY_DEPTH 10000
 #define MAX_SAMPLES 1500
 #define ALLOC_SAMPLES 1000
-#define RETRY_COUNT 10
+#define RETRY_COUNT 30
 
 class DDSClient {
 public:

@@ -108,13 +108,28 @@ void DDSServer::sendMessageToRibbon(
 
   clientserver::Operation m_operation_register;
   clientserver::Result m_result_register;
-  m_operation_register.m_type = NOTIFICATION_MESSAGE;
   std::vector<char> register_guid_vector;
   for (std::size_t i = 0; i < m_guid.size(); i++) {
     register_guid_vector.push_back(m_guid[i]);
   }
+
+  m_operation_register.m_type = DUMMY_MESSAGE;
+  do {
+    // TODO: this dummy write is necessary, otherwise subscriber can't receive
+    // following messages. Don't know why for now.
+    m_result_register.m_guid = c_Guid_Unknown;
+    writer_detect->write((char *)&m_operation_register);
+    reader_detect->wait_for_unread_message({RETRY_COUNT, 0});
+    reader_detect->take_next_sample((char *)&m_result_register,
+                                    &m_sampleInfo_register);
+  } while (m_sampleInfo_register.instance_state !=
+               eprosima::fastdds::dds::ALIVE_INSTANCE_STATE ||
+           m_result_register.m_guid != m_operation_register.m_guid);
+
   m_operation_register.m_vector = register_guid_vector;
   m_operation_register.m_vector_size = register_guid_vector.size();
+  m_operation_register.m_type = NOTIFICATION_MESSAGE;
+  std::cout << "BEGIN REGISTER SELF" << std::endl;
   writer_detect->write((char *)&m_operation_register);
   do {
     m_result_register.m_guid = c_Guid_Unknown;
@@ -124,6 +139,7 @@ void DDSServer::sendMessageToRibbon(
   } while (m_sampleInfo_register.instance_state !=
                eprosima::fastdds::dds::ALIVE_INSTANCE_STATE ||
            m_result_register.m_guid != m_operation_register.m_guid);
+  std::cout << "END REGISTER SELF" << std::endl;
 }
 
 bool DDSServer::detect_ribbon(std::string service_name) {
@@ -179,7 +195,10 @@ bool DDSServer::detect_ribbon(std::string service_name) {
     count++;
   }
   if (!isReadyDetect()) { // no Ribbon
+    std::cout << "NO RIBBON DETECTED" << std::endl;
     create_ribbon(service_name);
+  } else {
+    std::cout << "EXISTED RIBBON DETECTED" << std::endl;
   }
 
   // send a register message to Ribbon
@@ -598,6 +617,8 @@ void DDSRouter::adjust_index() {
   }
 }
 
+std::unordered_map<int, int> DDSRouter::enclave_id_to_server_index;
+
 bool DDSRouter::call_server(std::vector<char> &param, std::vector<char> &result,
                             int &enclave_id) {
   // enclave id is similar to process id
@@ -622,7 +643,7 @@ bool DDSRouter::call_server(std::vector<char> &param, std::vector<char> &result,
   }
 
   enclave_id = m_operation_server.m_enclave_id;
-  printf("ENCLAVE ID: %d\n", enclave_id);
+  printf("ENCLAVE ID: %d SERVER INDEX: %d\n", enclave_id, index);
   /* m_operation_server.m_type = DUMMY_MESSAGE; */
   /* // TODO: this is necessary but don't know why */
   /* mp_operation_writer_server_list[index]->write((char *)&m_operation_server);
