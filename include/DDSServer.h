@@ -248,6 +248,7 @@ public:
         m_result.m_guid = m_operation.m_guid;
         int operation_type = m_operation.m_type;
         if (operation_type == NOTIFICATION_MESSAGE) {
+          printf("DDSRouter Received NOTIFICATION_MESSAGE\n");
           std::vector<char> register_guid_vector = m_operation.m_vector;
           std::string temp_guid;
           temp_guid.insert(temp_guid.begin(), register_guid_vector.begin(),
@@ -258,6 +259,8 @@ public:
         } else if (operation_type == NORMAL_MESSAGE) {
           std::vector<char> result_vector;
           printf("DDSRouter Received %lu\n", m_operation.m_vector.size());
+          m_result.m_type = DUMMY_MESSAGE;
+          mp_up->mp_result_writer->write((char *)&m_result);
 
           mp_up->call_server(m_operation.m_vector, result_vector,
                              m_operation.m_enclave_id);
@@ -265,6 +268,7 @@ public:
           m_result.m_vector = result_vector;
           m_result.m_vector_size = result_vector.size();
           m_result.m_enclave_id = m_operation.m_enclave_id;
+          m_result.m_guid = m_operation.m_guid;
           mp_up->mp_result_writer->write((char *)&m_result);
         } else {
           printf("DDSRouter Received Dummy\n");

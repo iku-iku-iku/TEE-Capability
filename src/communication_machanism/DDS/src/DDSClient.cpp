@@ -14,6 +14,7 @@
  */
 
 #include "DDSClient.h"
+#include "ClientServerTypes.h"
 
 #include <fastdds/dds/domain/DomainParticipantFactory.hpp>
 #include <fastdds/dds/subscriber/SampleInfo.hpp>
@@ -88,7 +89,8 @@ static DataWriterQos create_dataWriterQos() {
   wqos.resource_limits().max_samples = MAX_SAMPLES;
   wqos.resource_limits().allocated_samples = ALLOC_SAMPLES;
   wqos.reliability().kind = RELIABLE_RELIABILITY_QOS;
-  wqos.publish_mode().kind = eprosima::fastdds::dds::ASYNCHRONOUS_PUBLISH_MODE;
+  // wqos.publish_mode().kind =
+  // eprosima::fastdds::dds::ASYNCHRONOUS_PUBLISH_MODE;
   return wqos;
 }
 
@@ -168,8 +170,26 @@ Serialization *DDSClient::call_service(Serialization *param, int enclave_id) {
     test_vector.push_back(param->data()[i]);
   }
 
+  auto randomize_guid = [](GUID_t &guid) {
+    for (int i = 0; i < 12; i++) {
+      guid.guidPrefix.value[i] = rand() % 256;
+    }
+    guid.entityId.value[3] = rand() % 256;
+  };
+
+  auto print_guid = [](GUID_t &guid) {
+    printf("GUID: ");
+    for (int i = 0; i < 12; i++) {
+      printf("%02x", guid.guidPrefix.value[i]);
+    }
+    printf(":%d\n", guid.entityId.value[3]);
+  };
+
   m_operation.m_type = DUMMY_MESSAGE;
   m_operation.m_enclave_id = enclave_id;
+  randomize_guid(m_operation.m_guid);
+
+  printf("BEGIN DUMMY WRITE\n");
   do {
     // TODO: this dummy write is necessary, otherwise subscriber can't receive
     // following messages. Don't know why for now.
@@ -177,15 +197,32 @@ Serialization *DDSClient::call_service(Serialization *param, int enclave_id) {
     resetResult();
     mp_result_reader->wait_for_unread_message({1, 0});
     mp_result_reader->take_next_sample((char *)&m_result, &m_sampleInfo);
+
+    printf("RESULT GUID: ");
+    print_guid(m_result.m_guid);
+    printf("EXPECTED GUID: ");
+    print_guid(m_operation.m_guid);
   } while (m_sampleInfo.instance_state !=
-           eprosima::fastdds::dds::ALIVE_INSTANCE_STATE);
+               eprosima::fastdds::dds::ALIVE_INSTANCE_STATE &&
+           m_result.m_guid != m_operation.m_guid);
+  printf("END DUMMY WRITE\n");
 
   m_operation.m_type = NORMAL_MESSAGE;
   m_operation.m_vector = test_vector;
   m_operation.m_vector_size = test_vector.size();
+
+  // use guid to identify the message
+  randomize_guid(m_operation.m_guid);
   printf("WRITE (%luB) ENCLAVE ID: %d\n", m_operation.m_vector.size(),
          enclave_id);
-  mp_operation_writer->write((char *)&m_operation);
+
+  m_result.m_type = NORMAL_MESSAGE;
+  do {
+    mp_operation_writer->write((char *)&m_operation);
+    resetResult();
+    mp_result_reader->wait_for_unread_message({1, 0});
+    mp_result_reader->take_next_sample((char *)&m_result, &m_sampleInfo);
+  } while (m_result.m_type != DUMMY_MESSAGE);
 
   m_result.m_vector.clear();
   do {
@@ -195,10 +232,10 @@ Serialization *DDSClient::call_service(Serialization *param, int enclave_id) {
     std::cout << "take_next_sample" << std::endl;
     mp_result_reader->take_next_sample((char *)&m_result, &m_sampleInfo);
 
-    if (m_sampleInfo.instance_state !=
-        eprosima::fastdds::dds::ALIVE_INSTANCE_STATE) {
-      std::cout << "NOT OK" << std::endl;
-    }
+    printf("RESULT GUID: ");
+    print_guid(m_result.m_guid);
+    printf("EXPECTED GUID: ");
+    print_guid(m_operation.m_guid);
   } while (m_sampleInfo.instance_state !=
                eprosima::fastdds::dds::ALIVE_INSTANCE_STATE ||
            m_result.m_guid != m_operation.m_guid);
