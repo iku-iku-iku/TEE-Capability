@@ -12,10 +12,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "DDSClient.h"
-#include "DDSServer.h"
-#include "Serialization.h"
-#include "Softbus.h"
 #include <bitset>
 #include <cstdint>
 #include <cstdio>
@@ -26,6 +22,10 @@
 #include <random>
 #include <sstream>
 #include <string>
+#include "DDSClient.h"
+#include "DDSServer.h"
+#include "Serialization.h"
+#include "Softbus.h"
 
 #include <cstdlib>
 #include <pthread.h>
@@ -35,229 +35,271 @@
 using namespace eprosima::fastrtps;
 using namespace eprosima::fastrtps::rtps;
 
-enum class E_SIDE { CLIENT, SERVER };
+enum class E_SIDE {
+    CLIENT,
+    SERVER
+};
 
-bool write_file(const char *path, const std::vector<char> &bytes) {
-  std::ofstream file(path, std::ios::binary);
-  if (!file.is_open()) {
-    return false;
-  }
+bool write_file(const char *path, const std::vector<char> &bytes)
+{
+    std::ofstream file(path, std::ios::binary);
+    if (!file.is_open()) {
+        return false;
+    }
 
-  file.write(bytes.data(), bytes.size());
-  return !file.fail();
+    file.write(bytes.data(), bytes.size());
+    return !file.fail();
 }
 
 auto get_enclave_version_mapping()
-    -> std::unordered_map<std::string, std::string> {
-  std::unordered_map<std::string, std::string> map;
-  std::ifstream ifs(MAPPING_FILE);
-  if (ifs.is_open()) {
-    std::string line;
-    while (std::getline(ifs, line)) {
-      std::string val;
-      std::getline(ifs, val);
-      map[line] = std::move(val);
+    -> std::unordered_map<std::string, std::string>
+{
+    std::unordered_map<std::string, std::string> map;
+    std::ifstream ifs(MAPPING_FILE);
+    if (ifs.is_open()) {
+        std::string line;
+        while (std::getline(ifs, line)) {
+            std::string val;
+            std::getline(ifs, val);
+            map[line] = std::move(val);
+        }
     }
-  }
-  return map;
+    return map;
 }
 
 void write_enclave_version_mapping(
-    const std::unordered_map<std::string, std::string> &map) {
-  std::ofstream ofs(MAPPING_FILE);
-  for (const auto &[key, val] : map) {
-    ofs << key << std::endl << val << std::endl;
-  }
+    const std::unordered_map<std::string, std::string> &map)
+{
+    std::ofstream ofs(MAPPING_FILE);
+    for (const auto &[key, val] : map) {
+        ofs << key << std::endl << val << std::endl;
+    }
 }
 
 void get_enclave_version(const std::string &enclave_name,
-                         std::string &enclave_version) {
-  auto map = get_enclave_version_mapping();
-  auto it = map.find(enclave_name);
-  if (it != map.end()) {
-    enclave_version = it->second;
-  } else {
-    enclave_version = "";
-  }
+                         std::string &enclave_version)
+{
+    auto map = get_enclave_version_mapping();
+    auto it = map.find(enclave_name);
+    if (it != map.end()) {
+        enclave_version = it->second;
+    } else {
+        enclave_version = "";
+    }
 }
 
 void put_enclave_version_mapping(const std::string &enclave_name,
-                                 const std::string &version) {
-  auto map = get_enclave_version_mapping();
-  map[enclave_name] = version;
-  write_enclave_version_mapping(map);
+                                 const std::string &version)
+{
+    auto map = get_enclave_version_mapping();
+    map[enclave_name] = version;
+    write_enclave_version_mapping(map);
 }
 
-int enclave_receiver(std::vector<char> enclave_file, std::string enclave_name,
-                     std::string enclave_version) {
-  std::string old_version;
-  get_enclave_version(enclave_name, old_version);
+extern "C"
+{
+    std::vector<char> (*get_report_func)(const char *enclave_path);
+    bool (*is_report_valid_func)(void *report, const char *enclave_path);
+}
 
-  float new_version;
-  try {
-    new_version = std::stof(enclave_version);
-  } catch (std::invalid_argument e) {
-    return -1;
-  }
-  if (old_version.empty()) {
-    put_enclave_version_mapping(enclave_name, enclave_version);
-  } else {
-    float old;
+std::vector<char> enclave_receiver(std::vector<char> enclave_file,
+                                   std::string enclave_name,
+                                   std::string enclave_version)
+{
+    std::string old_version;
+    get_enclave_version(enclave_name, old_version);
+
+    float new_version;
     try {
-      old = std::stof(old_version);
+        new_version = std::stof(enclave_version);
     } catch (std::invalid_argument e) {
-      return -1;
+        return {};
     }
-    if (new_version > old) {
-      put_enclave_version_mapping(enclave_name, enclave_version);
+    if (old_version.empty()) {
+        put_enclave_version_mapping(enclave_name, enclave_version);
+        printf("RECEIVED NEW ENCLAVE FILE: %s(%luB):%f\n", enclave_name.c_str(),
+               enclave_file.size(), new_version);
     } else {
-      return 0;
+        float old;
+        try {
+            old = std::stof(old_version);
+        } catch (std::invalid_argument e) {
+            return {};
+        }
+        if (new_version > old) {
+            put_enclave_version_mapping(enclave_name, enclave_version);
+            printf("RECEIVED NEW ENCLAVE FILE: %s(%luB):%f\n",
+                   enclave_name.c_str(), enclave_file.size(), new_version);
+        }
     }
-  }
-  printf("RECEIVED NEW ENCLAVE FILE: %s(%luB):%f\n", enclave_name.c_str(),
-         enclave_file.size(), new_version);
-  std::string enclave_filename = enclave_name + ENCLAVE_FILE_EXTENSION;
-  if (!write_file(enclave_filename.c_str(), enclave_file)) {
-    return -1;
-  }
-  return 0;
+    std::string enclave_filename = enclave_name + ENCLAVE_FILE_EXTENSION;
+    if (!write_file(enclave_filename.c_str(), enclave_file)) {
+        return {};
+    }
+
+    if (get_report_func == 0) {
+        printf("WARNING: get_report_func is not set\n");
+        return {};
+    }
+    return get_report_func(enclave_filename.c_str());
 }
 
-bool read_file(const char *path, std::vector<char> &bytes) {
-  std::ifstream file(path, std::ios::binary);
-  if (!file.is_open()) {
-    return false;
-  }
+bool read_file(const char *path, std::vector<char> &bytes)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) {
+        return false;
+    }
 
-  file.seekg(0, std::ios::end);
-  std::streampos file_size = file.tellg();
-  file.seekg(0, std::ios::beg);
+    file.seekg(0, std::ios::end);
+    std::streampos file_size = file.tellg();
+    file.seekg(0, std::ios::beg);
 
-  if (file_size <= 0) {
+    if (file_size <= 0) {
+        file.close();
+        return false;
+    }
+
+    bytes.resize(static_cast<size_t>(file_size));
+    file.read(bytes.data(), file_size);
     file.close();
-    return false;
-  }
 
-  bytes.resize(static_cast<size_t>(file_size));
-  file.read(bytes.data(), file_size);
-  file.close();
-
-  return static_cast<size_t>(file_size) == bytes.size();
+    return static_cast<size_t>(file_size) == bytes.size();
 }
 
-DistributedTeeContext *
-init_distributed_tee_context(DistributedTeeConfig config) {
-  DistributedTeeContext *context = new DistributedTeeContext{};
-  g_current_dtee_context = context;
-  context->config = config;
-  if (config.side == SIDE::Server) {
-    if (config.mode == MODE::ComputeNode) {
-      publish_secure_function(context, enclave_receiver);
-    }
-  } else {
-    context->client = new TeeClient;
+DistributedTeeContext *init_distributed_tee_context(DistributedTeeConfig config)
+{
+    DistributedTeeContext *context = new DistributedTeeContext{};
+    g_current_dtee_context = context;
+    context->config = config;
+    if (config.side == SIDE::Server) {
+        if (config.mode == MODE::ComputeNode) {
+            publish_secure_function(context, enclave_receiver);
+        }
+    } else {
+        context->client = new TeeClient;
 
-    if (config.mode == MODE::Migrate ||
-        config.mode == MODE::Transparent && !exist_local_tee()) {
-      std::vector<char> bytes;
-      if (read_file("enclave.signed.so", bytes)) {
-        const std::string &enclave_name = config.name;
-        printf("BEGIN MIGRATED ENCLAVE (%luB)", bytes.size());
-        g_current_dtee_context->client->call_service<int>(
-            "enclave_receiver", g_current_dtee_context->enclave_id, bytes,
-            enclave_name, config.version);
-        int enclave_id =
-            g_current_dtee_context->client->get_client_proxy("enclave_receiver")
-                .get_result()
-                .m_enclave_id;
-        // the enclave now resides in the node with *enclave_id*
-        g_current_dtee_context->enclave_id = enclave_id;
-        std::cout << "END MIGRATED ENCLAVE" << std::endl;
-      }
+        if (config.mode == MODE::Migrate ||
+            config.mode == MODE::Transparent && !exist_local_tee()) {
+            std::vector<char> bytes;
+            if (read_file("enclave.signed.so", bytes)) {
+                const std::string &enclave_name = config.name;
+                printf("BEGIN MIGRATED ENCLAVE (%luB)", bytes.size());
+                auto report = g_current_dtee_context->client
+                                  ->call_service<std::vector<char>>(
+                                      "enclave_receiver",
+                                      g_current_dtee_context->enclave_id, bytes,
+                                      enclave_name, config.version);
+                printf("REPORT LEN: %lu\n", report.size());
+                if (report.size() != 0 && is_report_valid_func != 0 &&
+                    is_report_valid_func(report.data(), "enclave.signed.so")) {
+                    printf("REPORT VALID\n");
+                } else {
+                    printf("REPORT INVALID\n");
+                }
+                int enclave_id = g_current_dtee_context->client
+                                     ->get_client_proxy("enclave_receiver")
+                                     .get_result()
+                                     .m_enclave_id;
+                // the enclave now resides in the node with *enclave_id*
+                g_current_dtee_context->enclave_id = enclave_id;
+                std::cout << "END MIGRATED ENCLAVE" << std::endl;
+            }
+        }
     }
-  }
-  return context;
+    return context;
 }
 
-void destroy_distributed_tee_context(DistributedTeeContext *context) {
-  delete context->client;
-  for (const auto &s : context->servers) {
-    delete s;
-  }
-  delete context;
+void destroy_distributed_tee_context(DistributedTeeContext *context)
+{
+    delete context->client;
+    for (const auto &s : context->servers) {
+        delete s;
+    }
+    delete context;
 }
 
 #define DECL_FUNC_TYPE(FuncName, FuncRet, ...)                                 \
-  typedef FuncRet (*FuncName)(__VA_ARGS__);                                    \
-  static void proxy_##FuncName(Serialization *serialization, const char *data, \
-                               int len) {}                                     \
-  static void publish_##FuncName(DistributedTeeContext *context) {             \
-    context->server->add_service_to_func(#FuncName, proxy_##FuncName);         \
-  }
-
-void tee_server_run(DistributedTeeContext *context) {
-  using ProxyType =
-      std::remove_pointer_t<decltype(std::declval<SoftbusServer>().run())>;
-  std::vector<std::unique_ptr<ProxyType>> proxys;
-  for (const auto &s : context->servers) {
-    if (s) {
-      auto *proxy = s->run();
-      proxys.emplace_back(proxy);
+    typedef FuncRet (*FuncName)(__VA_ARGS__);                                  \
+    static void proxy_##FuncName(Serialization *serialization,                 \
+                                 const char *data, int len)                    \
+    {                                                                          \
+    }                                                                          \
+    static void publish_##FuncName(DistributedTeeContext *context)             \
+    {                                                                          \
+        context->server->add_service_to_func(#FuncName, proxy_##FuncName);     \
     }
-  }
-  std::cout << "Enter a number to stop the server: ";
-  int aux;
-  std::cin >> aux;
+
+void tee_server_run(DistributedTeeContext *context)
+{
+    using ProxyType =
+        std::remove_pointer_t<decltype(std::declval<SoftbusServer>().run())>;
+    std::vector<std::unique_ptr<ProxyType>> proxys;
+    for (const auto &s : context->servers) {
+        if (s) {
+            auto *proxy = s->run();
+            proxys.emplace_back(proxy);
+        }
+    }
+    std::cout << "Enter a number to stop the server: ";
+    int aux;
+    std::cin >> aux;
 }
 
-int distributed_tee_ecall_enclave(void *enclave, uint32_t function_id,
+int distributed_tee_ecall_enclave(void *enclave,
+                                  uint32_t function_id,
                                   const void *input_buffer,
-                                  size_t input_buffer_size, void *output_buffer,
-                                  size_t output_buffer_size, void *ms,
-                                  const void *ocall_table) {
-  printf("HOOKED: FUNCTION ID: %d, INPUT BUFFER SIZE: %lu, OUTPUT BUFFER SIZE: "
-         "%lu\n",
-         function_id, input_buffer_size, output_buffer_size);
-  /*   using EcallEnclaveFunc = decltype(distributed_tee_ecall_enclave) *; */
-  /* #define FORWARD_ECALL_ENCLAVE \ */
-  /*   return reinterpret_cast<EcallEnclaveFunc>( \ */
-  /*       g_current_dtee_context->ecall_enclave)( \ */
-  /*       enclave, function_id, input_buffer, input_buffer_size, output_buffer,
-   * \ */
-  /*       output_buffer_size, ms, ocall_table); */
-  /**/
-  /*   if (g_current_dtee_context->config.side == SIDE::Server) { */
-  /*     FORWARD_ECALL_ENCLAVE */
-  /*   } */
-  /**/
-  /*   if (g_current_dtee_context->config.mode == MODE::Transparent && */
-  /*       exist_local_tee()) { */
-  /*     printf("using local tee\n"); */
-  /*     FORWARD_ECALL_ENCLAVE */
-  /*   } */
-  /**/
-  /*   if (g_current_dtee_context->config.mode == MODE::Normal) { */
-  /*     FORWARD_ECALL_ENCLAVE */
-  /*   } */
-  /**/
-  char *input_buffer_ = (char *)input_buffer;
-  char *output_buffer_ = (char *)output_buffer;
-  std::vector<char> in_buf(input_buffer_, input_buffer_ + input_buffer_size);
-  std::vector<char> out_buf(output_buffer_,
-                            output_buffer_ + output_buffer_size);
-  const std::string &client_name = g_current_dtee_context->config.name;
-  auto res =
-      g_current_dtee_context->client->call_service<PackedMigrateCallResult>(
-          "_Z_task_handler", g_current_dtee_context->enclave_id, client_name,
-          function_id, in_buf, out_buf);
+                                  size_t input_buffer_size,
+                                  void *output_buffer,
+                                  size_t output_buffer_size,
+                                  void *ms,
+                                  const void *ocall_table)
+{
+    printf(
+        "HOOKED: FUNCTION ID: %d, INPUT BUFFER SIZE: %lu, OUTPUT BUFFER SIZE: "
+        "%lu\n",
+        function_id, input_buffer_size, output_buffer_size);
+    /*   using EcallEnclaveFunc = decltype(distributed_tee_ecall_enclave) *; */
+    /* #define FORWARD_ECALL_ENCLAVE \ */
+    /*   return reinterpret_cast<EcallEnclaveFunc>( \ */
+    /*       g_current_dtee_context->ecall_enclave)( \ */
+    /*       enclave, function_id, input_buffer, input_buffer_size,
+     * output_buffer,
+     * \ */
+    /*       output_buffer_size, ms, ocall_table); */
+    /**/
+    /*   if (g_current_dtee_context->config.side == SIDE::Server) { */
+    /*     FORWARD_ECALL_ENCLAVE */
+    /*   } */
+    /**/
+    /*   if (g_current_dtee_context->config.mode == MODE::Transparent && */
+    /*       exist_local_tee()) { */
+    /*     printf("using local tee\n"); */
+    /*     FORWARD_ECALL_ENCLAVE */
+    /*   } */
+    /**/
+    /*   if (g_current_dtee_context->config.mode == MODE::Normal) { */
+    /*     FORWARD_ECALL_ENCLAVE */
+    /*   } */
+    /**/
+    char *input_buffer_ = (char *)input_buffer;
+    char *output_buffer_ = (char *)output_buffer;
+    std::vector<char> in_buf(input_buffer_, input_buffer_ + input_buffer_size);
+    std::vector<char> out_buf(output_buffer_,
+                              output_buffer_ + output_buffer_size);
+    const std::string &client_name = g_current_dtee_context->config.name;
+    auto res =
+        g_current_dtee_context->client->call_service<PackedMigrateCallResult>(
+            "_Z_task_handler", g_current_dtee_context->enclave_id, client_name,
+            function_id, in_buf, out_buf);
 
-  for (int i = 0; i < output_buffer_size; i++) {
-    output_buffer_[i] = res.out_buf[i];
-  }
+    for (int i = 0; i < output_buffer_size; i++) {
+        output_buffer_[i] = res.out_buf[i];
+    }
 
-  std::cout << "RES: " << res.res << std::endl;
+    std::cout << "RES: " << res.res << std::endl;
 
-  return res.res;
+    return res.res;
 }
 
 DistributedTeeContext *g_current_dtee_context;
