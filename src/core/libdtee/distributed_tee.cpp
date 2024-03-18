@@ -35,6 +35,18 @@
 using namespace eprosima::fastrtps;
 using namespace eprosima::fastrtps::rtps;
 
+extern "C"
+{
+    std::vector<char> (*get_report_func)(const char *enclave_path);
+    bool (*is_report_valid_func)(void *report, const char *enclave_path);
+    std::pair<std::string, std::string> (*make_key_pair_func)();
+    std::string (*make_shared_key_func)(std::string pri_key,
+                                        std::string in_pub_key);
+    int (*key_exchange_func)(char *in_key,
+                             int in_key_len,
+                             char *out_key,
+                             int out_key_len);
+}
 enum class E_SIDE {
     CLIENT,
     SERVER
@@ -96,19 +108,19 @@ void put_enclave_version_mapping(const std::string &enclave_name,
     write_enclave_version_mapping(map);
 }
 
-extern "C"
-{
-    std::vector<char> (*get_report_func)(const char *enclave_path);
-    bool (*is_report_valid_func)(void *report, const char *enclave_path);
-}
+const char *g_forced_enclave_path;
 
-std::vector<char> enclave_receiver(std::vector<char> enclave_file,
-                                   std::string enclave_name,
-                                   std::string enclave_version)
+std::vector<char> enclave_receiver(std::string enclave_name,
+                                   std::string enclave_version,
+                                   std::string in_pub_key,
+                                   std::vector<char> enclave_file)
 {
+    printf("OK name: %s version: %s filesize: %lu\n", enclave_name.c_str(),
+           enclave_version.c_str(), enclave_file.size());
     std::string old_version;
     get_enclave_version(enclave_name, old_version);
 
+    std::string enclave_filename = enclave_name + ENCLAVE_FILE_EXTENSION;
     float new_version;
     try {
         new_version = std::stof(enclave_version);
@@ -117,6 +129,10 @@ std::vector<char> enclave_receiver(std::vector<char> enclave_file,
     }
     if (old_version.empty()) {
         put_enclave_version_mapping(enclave_name, enclave_version);
+        if (!write_file(enclave_filename.c_str(), enclave_file)) {
+            printf("ERROR\n");
+            return {};
+        }
         printf("RECEIVED NEW ENCLAVE FILE: %s(%luB):%f\n", enclave_name.c_str(),
                enclave_file.size(), new_version);
     } else {
@@ -128,20 +144,48 @@ std::vector<char> enclave_receiver(std::vector<char> enclave_file,
         }
         if (new_version > old) {
             put_enclave_version_mapping(enclave_name, enclave_version);
+            if (!write_file(enclave_filename.c_str(), enclave_file)) {
+                printf("ERROR\n");
+                return {};
+            }
             printf("RECEIVED NEW ENCLAVE FILE: %s(%luB):%f\n",
                    enclave_name.c_str(), enclave_file.size(), new_version);
         }
     }
-    std::string enclave_filename = enclave_name + ENCLAVE_FILE_EXTENSION;
-    if (!write_file(enclave_filename.c_str(), enclave_file)) {
-        return {};
-    }
+    printf("OK\n");
+    printf("OK\n");
 
     if (get_report_func == 0) {
         printf("WARNING: get_report_func is not set\n");
         return {};
     }
-    return get_report_func(enclave_filename.c_str());
+    printf("OK\n");
+    std::vector<char> res;
+    std::vector<char> pub;
+    pub.resize(64);
+    if (key_exchange_func) {
+        printf("EXCHANGE\n");
+        g_forced_enclave_path = enclave_filename.c_str();
+        key_exchange_func((char *)in_pub_key.c_str(), 64, (char *)pub.data(),
+                          64);
+        g_forced_enclave_path = 0;
+    }
+    // if (make_key_pair_func) {
+    //     std::tie(pri, pub) = make_key_pair_func();
+    //     if (make_shared_key_func) {
+    //         auto shared = make_shared_key_func(pri, in_pub_key);
+    //         for (const auto c : shared) {
+    //             printf("%02x ", c);
+    //         }
+    //         puts("");
+    //     }
+    // }
+
+    auto ret_key = std::string(pub.begin(), pub.end());
+    res.insert(res.end(), ret_key.begin(), ret_key.end());
+    auto ret_report = get_report_func(enclave_filename.c_str());
+    res.insert(res.end(), ret_report.begin(), ret_report.end());
+    return res;
 }
 
 bool read_file(const char *path, std::vector<char> &bytes)
@@ -185,17 +229,43 @@ DistributedTeeContext *init_distributed_tee_context(DistributedTeeConfig config)
             if (read_file("enclave.signed.so", bytes)) {
                 const std::string &enclave_name = config.name;
                 printf("BEGIN MIGRATED ENCLAVE (%luB)", bytes.size());
-                auto report = g_current_dtee_context->client
-                                  ->call_service<std::vector<char>>(
-                                      "enclave_receiver",
-                                      g_current_dtee_context->enclave_id, bytes,
-                                      enclave_name, config.version);
-                printf("REPORT LEN: %lu\n", report.size());
-                if (report.size() != 0 && is_report_valid_func != 0 &&
-                    is_report_valid_func(report.data(), "enclave.signed.so")) {
-                    printf("REPORT VALID\n");
+
+                std::string pri, pub;
+                if (make_key_pair_func) {
+                    std::tie(pri, pub) = make_key_pair_func();
+                }
+
+                auto key_and_report =
+                    g_current_dtee_context->client
+                        ->call_service<std::vector<char>>(
+                            "enclave_receiver",
+                            g_current_dtee_context->enclave_id, enclave_name,
+                            config.version, pub, bytes);
+
+                if (key_and_report.size() != 0) {
+                    const auto ret_pub_key = std::string(
+                        key_and_report.begin(), key_and_report.begin() + 64);
+                    if (make_shared_key_func) {
+                        auto shared = make_shared_key_func(pri, ret_pub_key);
+                        for (const auto c : shared) {
+                            printf("%02x ", c);
+                        }
+                        puts("");
+                    }
+
+                    auto report = std::vector<char>(key_and_report.begin() + 64,
+                                                    key_and_report.end());
+
+                    if (is_report_valid_func != 0 &&
+                        is_report_valid_func(report.data(),
+                                             "enclave.signed.so")) {
+                        printf("REPORT VALID\n");
+                    } else {
+                        printf("REPORT INVALID\n");
+                    }
                 } else {
-                    printf("REPORT INVALID\n");
+                    printf("ERROR: NO KEY AND REPORT\n");
+                    exit(-1);
                 }
                 int enclave_id = g_current_dtee_context->client
                                      ->get_client_proxy("enclave_receiver")

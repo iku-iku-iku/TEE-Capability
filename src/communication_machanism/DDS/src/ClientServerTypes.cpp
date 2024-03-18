@@ -35,6 +35,11 @@ bool OperationDataType::serialize(void *data, SerializedPayload_t *payload)
     pos += sizeof(int);
     *(int *)(payload->data + pos) = op->m_enclave_id;
     pos += sizeof(int);
+    // logic for fragmentation
+    *(int *)(payload->data + pos) = op->fragment_idx;
+    pos += sizeof(int);
+    *(int *)(payload->data + pos) = op->total_fragment;
+    pos += sizeof(int);
     for (int i = 0; i < op->m_vector_size; i++) {
         *(char *)(payload->data + pos) = op->m_vector[i];
         pos += sizeof(char);
@@ -57,6 +62,11 @@ bool OperationDataType::deserialize(SerializedPayload_t *payload, void *data)
     op->m_vector_size = *(int *)(payload->data + pos);
     pos += sizeof(int);
     op->m_enclave_id = *(int *)(payload->data + pos);
+    pos += sizeof(int);
+    // logic for fragmentation
+    op->fragment_idx = *(int *)(payload->data + pos);
+    pos += sizeof(int);
+    op->total_fragment = *(int *)(payload->data + pos);
     pos += sizeof(int);
     for (int i = 0; i < op->m_vector_size; i++) {
         op->m_vector.push_back(*(char *)(payload->data + pos));
@@ -100,6 +110,9 @@ bool ResultDataType::serialize(void *data, SerializedPayload_t *payload)
     pos += sizeof(int);
     *(int *)(payload->data + pos) = res->m_enclave_id;
     pos += sizeof(int);
+    // logic for fragmentation
+    *(int *)(payload->data + pos) = res->ack_idx;
+    pos += sizeof(int);
     for (int i = 0; i < res->m_vector_size; i++) {
         *(char *)(payload->data + pos) = res->m_vector[i];
         pos += sizeof(char);
@@ -122,6 +135,9 @@ bool ResultDataType::deserialize(SerializedPayload_t *payload, void *data)
     res->m_vector_size = *(int *)(payload->data + pos);
     pos += sizeof(int);
     res->m_enclave_id = *(int *)(payload->data + pos);
+    pos += sizeof(int);
+    // logic for fragmentation
+    res->ack_idx = *(int *)(payload->data + pos);
     pos += sizeof(int);
     for (int i = 0; i < res->m_vector_size; i++) {
         res->m_vector.push_back(*(char *)(payload->data + pos));
