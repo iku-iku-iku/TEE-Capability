@@ -298,8 +298,6 @@ public:
                     mp_up->mp_result_writer->write((char *)&m_result);
                 } else if (operation_type == NORMAL_MESSAGE) {
                     std::vector<char> result_vector;
-                    printf("DDSRouter Received %lu\n",
-                           m_operation.m_vector.size());
                     m_result.m_type = DUMMY_MESSAGE;
                     mp_up->mp_result_writer->write((char *)&m_result);
 
@@ -314,8 +312,8 @@ public:
                     m_result.ack_idx = m_operation.fragment_idx;
                     mp_up->mp_result_writer->write((char *)&m_result);
                 } else {
-                    printf("DDSRouter Received Dummy\n");
                     m_result.m_guid = m_operation.m_guid;
+                    m_result.m_type = DUMMY_MESSAGE;
                     mp_up->mp_result_writer->write((char *)&m_result);
                 }
             }

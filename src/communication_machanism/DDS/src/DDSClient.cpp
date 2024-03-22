@@ -180,18 +180,11 @@ Serialization *DDSClient::call_service(Serialization *param, int enclave_id)
     }
 
     auto randomize_guid = [](GUID_t &guid) {
+        srand(time(0));
         for (int i = 0; i < 12; i++) {
             guid.guidPrefix.value[i] = rand() % 256;
         }
         guid.entityId.value[3] = rand() % 256;
-    };
-
-    auto print_guid = [](GUID_t &guid) {
-        printf("GUID: ");
-        for (int i = 0; i < 12; i++) {
-            printf("%02x", guid.guidPrefix.value[i]);
-        }
-        printf(":%d\n", guid.entityId.value[3]);
     };
 
     m_operation.m_type = DUMMY_MESSAGE;
@@ -208,10 +201,6 @@ Serialization *DDSClient::call_service(Serialization *param, int enclave_id)
         mp_result_reader->wait_for_unread_message({1, 0});
         mp_result_reader->take_next_sample((char *)&m_result, &m_sampleInfo);
 
-        printf("RESULT GUID: ");
-        print_guid(m_result.m_guid);
-        printf("EXPECTED GUID: ");
-        print_guid(m_operation.m_guid);
     } while (m_sampleInfo.instance_state !=
                  eprosima::fastdds::dds::ALIVE_INSTANCE_STATE &&
              m_result.m_guid != m_operation.m_guid);
@@ -252,16 +241,12 @@ Serialization *DDSClient::call_service(Serialization *param, int enclave_id)
         int prev_size = received.size();
         do {
             resetResult();
-            std::cout << "wait_for_unread_message" << std::endl;
+            // std::cout << "wait_for_unread_message" << std::endl;
             mp_result_reader->wait_for_unread_message({RETRY_COUNT, 0});
-            std::cout << "take_next_sample" << std::endl;
+            // std::cout << "take_next_sample" << std::endl;
             mp_result_reader->take_next_sample((char *)&m_result,
                                                &m_sampleInfo);
 
-            printf("RESULT GUID: ");
-            print_guid(m_result.m_guid);
-            printf("EXPECTED GUID: ");
-            print_guid(m_operation.m_guid);
             received.insert(m_result.ack_idx);
         } while (m_sampleInfo.instance_state !=
                      eprosima::fastdds::dds::ALIVE_INSTANCE_STATE ||

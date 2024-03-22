@@ -338,9 +338,10 @@ void DDSServer::OperationListener::on_data_available(DataReader * /* reader */)
             std::unique_lock<std::mutex> lock(mtx);
             auto &message = message_map[get_guid(m_operation.m_guid)];
             message[m_operation.fragment_idx] = m_operation.m_vector;
-            printf("DDSServer: %d/%d current: %d GUID: %s\n",
-                   m_operation.fragment_idx, m_operation.total_fragment,
-                   (int)message.size(), get_guid(m_operation.m_guid).c_str());
+            // printf("DDSServer: %d/%d current: %d GUID: %s\n",
+            //        m_operation.fragment_idx, m_operation.total_fragment,
+            //        (int)message.size(),
+            //        get_guid(m_operation.m_guid).c_str());
             // WTF???
             bool ready = message.size() == m_operation.total_fragment;
 
@@ -710,7 +711,8 @@ bool DDSRouter::call_server(clientserver::Operation &client_op,
     }
 
     enclave_id = m_operation_server.m_enclave_id;
-    printf("ENCLAVE ID: %d SERVER INDEX: %d\n", enclave_id, index);
+    // TODO: enclave_id increase every packet
+    // printf("ENCLAVE ID: %d SERVER INDEX: %d\n", enclave_id, index);
     /* m_operation_server.m_type = DUMMY_MESSAGE; */
     /* // TODO: this is necessary but don't know why */
     /* mp_operation_writer_server_list[index]->write((char

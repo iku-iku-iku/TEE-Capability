@@ -8,9 +8,15 @@
 #define ENCLAVE_FILE_EXTENSION ".signed.so"
 
 #ifdef __cplusplus
-extern "C" 
+extern "C"
 #endif
-int SM2_Verify(unsigned char *message, int len, unsigned char Px[], unsigned char Py[], unsigned char R[], unsigned char S[]);
+    int
+    SM2_Verify(unsigned char *message,
+               int len,
+               unsigned char Px[],
+               unsigned char Py[],
+               unsigned char R[],
+               unsigned char S[]);
 typedef SoftbusServer TeeServer;
 typedef SoftbusClient<> TeeClient;
 enum class SIDE {
@@ -40,6 +46,8 @@ struct DistributedTeeContext {
 
     // the original ecall function
     void *ecall_enclave;
+    std::vector<char> sealed_shared_key;
+    std::string shared_key;
 };
 
 template <typename Func>
